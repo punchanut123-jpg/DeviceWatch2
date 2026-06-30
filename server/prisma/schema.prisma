@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Building {
+  id             Int      @id @default(autoincrement())
+  name           String
+  floorPlanImage String?
+  createdAt      DateTime @default(now())
+  floors         Floor[]
+}
+
+model Floor {
+  id             Int      @id @default(autoincrement())
+  buildingId     Int
+  building       Building @relation(fields: [buildingId], references: [id])
+  floorNumber    Int
+  name           String?
+  floorPlanImage String?
+  createdAt      DateTime @default(now())
+  rooms          Room[]
+}
+
+model Room {
+  id         Int      @id @default(autoincrement())
+  floorId    Int
+  floor      Floor    @relation(fields: [floorId], references: [id])
+  roomNumber String
+  roomName   String?
+  posX       Float?
+  posY       Float?
+  width      Float?
+  height     Float?
+  createdAt  DateTime @default(now())
+  devices    Device[]
+}
+
+model Device {
+  id         Int      @id @default(autoincrement())
+  roomId     Int
+  room       Room     @relation(fields: [roomId], references: [id])
+  deviceCode String
+  deviceName String?
+  posX       Float
+  posY       Float
+  status     String   @default("normal")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  tickets    Ticket[]
+}
+
+model Ticket {
+  id             Int       @id @default(autoincrement())
+  deviceId       Int
+  device         Device    @relation(fields: [deviceId], references: [id])
+  symptom        String
+  status         String    @default("open")
+  resolutionNote String?
+  reportedAt     DateTime  @default(now())
+  resolvedAt     DateTime?
+}
