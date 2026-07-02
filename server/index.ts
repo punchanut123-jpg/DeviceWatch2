@@ -10,10 +10,33 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// ─── Buildings ────────────────────────────────────────────────────────────────
-app.get('/api/buildings', async (_req: Request, res: Response) => {
-  const buildings = await prisma.building.findMany();
-  res.json(buildings);
+app.get('/api/buildings', async (req: Request, res: Response) => {
+  const buildings = await prisma.building.findMany({
+    include: {
+      floors: {
+        include: {
+          rooms: {
+            include: {
+              devices: true, // ดึง devices มาเพื่อคำนวณสถานะ
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // map ข้อมูลเพื่อให้ได้ brokenCount
+  const buildingsWithStats = buildings.map((b) => {
+    let brokenCount = 0;
+    b.floors.forEach((f) => {
+      f.rooms.forEach((r) => {
+        brokenCount += r.devices.filter((d) => d.status === 'broken').length;
+      });
+    });
+    return { ...b, brokenCount };
+  });
+
+  res.json(buildingsWithStats);
 });
 
 app.get('/api/buildings/:id', async (req: Request, res: Response) => {
@@ -24,21 +47,49 @@ app.get('/api/buildings/:id', async (req: Request, res: Response) => {
   res.json(building);
 });
 
-// ─── Floors ───────────────────────────────────────────────────────────────────
 app.get('/api/buildings/:id/floors', async (req: Request, res: Response) => {
+  const buildingId = Number(req.params.id);
+  
   const floors = await prisma.floor.findMany({
-    where: { buildingId: Number(req.params.id) },
+    where: { buildingId },
     orderBy: { floorNumber: 'asc' },
+    include: {
+      rooms: {
+        include: {
+          devices: true
+        }
+      }
+    }
   });
-  res.json(floors);
+
+  const floorsWithStats = floors.map(floor => {
+    let brokenCount = 0;
+    floor.rooms.forEach(room => {
+      brokenCount += room.devices.filter(d => d.status === 'broken').length;
+    });
+    return { ...floor, brokenCount };
+  });
+
+  res.json(floorsWithStats);
 });
 
-// ─── Rooms ────────────────────────────────────────────────────────────────────
 app.get('/api/floors/:id/rooms', async (req: Request, res: Response) => {
+  const floorId = Number(req.params.id);
+  
   const rooms = await prisma.room.findMany({
-    where: { floorId: Number(req.params.id) },
+    where: { floorId },
+    include: {
+      devices: true // ดึง device มาเพื่อเช็คสถานะ
+    }
   });
-  res.json(rooms);
+
+  const roomsWithStats = rooms.map(room => {
+    // นับเครื่องที่เสียในห้องนี้
+    const brokenCount = room.devices.filter(d => d.status === 'broken').length;
+    return { ...room, brokenCount };
+  });
+
+  res.json(roomsWithStats);
 });
 
 // ─── Devices ──────────────────────────────────────────────────────────────────
