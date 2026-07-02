@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
+import axios from 'axios';
 import { PrismaClient } from '@prisma/client';
 
 const app = express();
@@ -129,14 +130,60 @@ app.get('/api/tickets', async (_req: Request, res: Response) => {
 
 app.post('/api/tickets', async (req: Request, res: Response) => {
   const { deviceId, symptom } = req.body;
-  const ticket = await prisma.ticket.create({
-    data: { deviceId: Number(deviceId), symptom },
-  });
-  await prisma.device.update({
-    where: { id: Number(deviceId) },
-    data: { status: 'broken' },
-  });
-  res.status(201).json(ticket);
+
+  try {
+    // 1. สร้าง Ticket และอัปเดตสถานะเครื่อง
+    const ticket = await prisma.ticket.create({
+      data: { deviceId: Number(deviceId), symptom },
+    });
+
+    await prisma.device.update({
+      where: { id: Number(deviceId) },
+      data: { status: 'broken' },
+    });
+
+    // 2. ดึงข้อมูลเครื่องและห้อง เพื่อเอา LINE User ID
+    const device = await prisma.device.findUnique({
+      where: { id: Number(deviceId) },
+      include: { room: true },
+    });
+
+    // 3. ส่ง LINE Message ถ้าห้องนั้นมีช่างรับผิดชอบ (lineUserId)
+    if (device && device.room && device.room.lineUserId) {
+      const lineToken = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
+
+      const messageText =
+`🔴 แจ้ซ่อมใหม่ — DeviceWatch
+ห้อง: ${device.room.roomNumber}
+เครื่อง: ${device.deviceCode}
+อาการ: ${symptom}`;
+
+      try {
+        await axios.post(
+          'https://api.line.me/v2/bot/message/push',
+          {
+            to: device.room.lineUserId,
+            messages: [{ type: 'text', text: messageText }],
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${lineToken}`,
+            },
+          }
+        );
+        console.log(`✅ LINE notification sent to ${device.room.lineUserId} for room ${device.room.roomNumber}`);
+      } catch (lineErr) {
+        // ไม่ throw error เพื่อให้ API ยัง return success แม้ LINE ส่งไม่ผ่าน
+        console.error('❌ Failed to send LINE notification:', lineErr);
+      }
+    }
+
+    res.status(201).json(ticket);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to create ticket' });
+  }
 });
 
 app.patch('/api/tickets/:id', async (req: Request, res: Response) => {

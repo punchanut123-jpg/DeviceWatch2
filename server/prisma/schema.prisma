@@ -36,6 +36,7 @@ model Room {
   posY       Float?
   width      Float?
   height     Float?
+  lineUserId String?  // LINE User ID ของช่างประจำห้อง
   createdAt  DateTime @default(now())
   devices    Device[]
 }

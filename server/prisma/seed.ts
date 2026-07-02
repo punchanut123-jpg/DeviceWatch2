@@ -24,7 +24,17 @@ async function main() {
     }
   });
 
-  // 4. ข้อมูลห้อง
+  // 4. Mapping LINE User ID ของช่างประจำห้อง (เปลี่ยนค่า Uxxxxxxx เป็น User ID จริง)
+  const roomLineMapping: Record<string, string> = {
+    '26201': 'Uafdc29a4602455f7cd66cacb080f05c2',
+    '26202': 'Uafdc29a4602455f7cd66cacb080f05c2',
+    '26203': 'Uafdc29a4602455f7cd66cacb080f05c2',
+    '26204': 'Uafdc29a4602455f7cd66cacb080f05c2',
+    '26205': 'Uafdc29a4602455f7cd66cacb080f05c2',
+    '26206': 'Uafdc29a4602455f7cd66cacb080f05c2',
+  };
+
+  // 5. ข้อมูลห้อง
   const rooms = [
     { number: "26201", name: "ห้องปฏิบัติการคอมพิวเตอร์ 26201", x: 5, y: 65, w: 18, h: 22, count: 57 },
     { number: "26202", name: "ห้องปฏิบัติการคอมพิวเตอร์ 26202", x: 5, y: 42, w: 18, h: 20, count: 31 },
@@ -44,6 +54,7 @@ async function main() {
         posY: r.y,
         width: r.w,
         height: r.h,
+        lineUserId: roomLineMapping[r.number] || null, // LINE User ID ของช่างประจำห้อง
       }
     });
 
