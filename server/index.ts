@@ -11,6 +11,18 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// ─── LINE Webhook ──────────────────────────────────────────────────────────────
+app.post('/webhook', (req: Request, res: Response) => {
+  const events = req.body.events;
+  if (events && events.length > 0) {
+    events.forEach((event: any) => {
+      console.log('📩 LINE Event Type:', event.type);
+      console.log('👤 LINE User ID:', event.source?.userId);
+    });
+  }
+  res.status(200).send('OK');
+});
+
 app.get('/api/buildings', async (req: Request, res: Response) => {
   const buildings = await prisma.building.findMany({
     include: {
@@ -148,21 +160,26 @@ app.post('/api/tickets', async (req: Request, res: Response) => {
       include: { room: true },
     });
 
-    // 3. ส่ง LINE Message ถ้าห้องนั้นมีช่างรับผิดชอบ (lineUserId)
+    // 3. ส่ง LINE Message ถ้าห้องนั้นมีช่างรับผิดชอบ
     if (device && device.room && device.room.lineUserId) {
-      const lineToken = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
+      const lineToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+      const lineUserId = device.room.lineUserId;
 
       const messageText =
-`🔴 แจ้ซ่อมใหม่ — DeviceWatch
+`🔴 แจ้งซ่อมใหม่ — DeviceWatch
 ห้อง: ${device.room.roomNumber}
 เครื่อง: ${device.deviceCode}
 อาการ: ${symptom}`;
 
+      // --- ส่วน Debugging Logs ---
+      console.log('กำลังส่ง LINE ไปหา:', lineUserId);
+      console.log('ใช้ Token:', lineToken ? lineToken.substring(0, 20) + '...' : 'UNDEFINED ❌');
+
       try {
-        await axios.post(
+        const response = await axios.post(
           'https://api.line.me/v2/bot/message/push',
           {
-            to: device.room.lineUserId,
+            to: lineUserId,
             messages: [{ type: 'text', text: messageText }],
           },
           {
@@ -172,16 +189,17 @@ app.post('/api/tickets', async (req: Request, res: Response) => {
             },
           }
         );
-        console.log(`✅ LINE notification sent to ${device.room.lineUserId} for room ${device.room.roomNumber}`);
-      } catch (lineErr) {
-        // ไม่ throw error เพื่อให้ API ยัง return success แม้ LINE ส่งไม่ผ่าน
-        console.error('❌ Failed to send LINE notification:', lineErr);
+        console.log('✅ LINE response status:', response.status);
+        console.log('✅ LINE response data:', response.data);
+      } catch (err: any) {
+        console.error('❌ LINE error status:', err.response?.status);
+        console.error('❌ LINE error data:', JSON.stringify(err.response?.data, null, 2));
       }
     }
 
     res.status(201).json(ticket);
   } catch (error) {
-    console.error(error);
+    console.error('API Error:', error);
     res.status(500).json({ error: 'Failed to create ticket' });
   }
 });
