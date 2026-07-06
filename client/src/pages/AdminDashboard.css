@@ -1,0 +1,119 @@
+/* ─── Page Wrapper ───────────────────────────────────────── */
+.admin-page {
+  min-height: 100vh;
+  background-color: var(--color-bg);
+}
+
+.admin-main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+/* ─── Filter Buttons ─────────────────────────────────────── */
+.admin-filter-bar {
+  margin-bottom: 1.5rem;
+  display: flex;
+  gap: 10px;
+}
+
+.admin-filter-btn {
+  padding: 0.5rem 1rem;
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.admin-filter-btn.active {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+/* ─── Tickets Table ──────────────────────────────────────── */
+.admin-table-wrapper {
+  background-color: var(--color-surface);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.admin-table thead tr {
+  background-color: #F9FAFB;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.admin-table th {
+  padding: 1rem;
+}
+
+.admin-table tbody tr {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.admin-table td {
+  padding: 1rem;
+}
+
+.admin-table td.td-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-table .device-room {
+  color: var(--color-text-muted);
+}
+
+/* ─── Status Badge ───────────────────────────────────────── */
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.status-badge--open {
+  background: #fee2e2;
+  color: var(--color-status-broken);
+}
+
+.status-badge--in_progress {
+  background: #fef3c7;
+  color: var(--color-status-repair);
+}
+
+.status-badge--resolved {
+  background: #dcfce7;
+  color: var(--color-status-normal);
+}
+
+/* ─── Action Buttons ─────────────────────────────────────── */
+.btn-start-repair {
+  padding: 6px 12px;
+  cursor: pointer;
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.btn-done-repair {
+  padding: 6px 12px;
+  cursor: pointer;
+  background-color: var(--color-status-normal);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+}

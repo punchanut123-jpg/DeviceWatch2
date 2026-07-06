@@ -47,8 +47,9 @@ export default function Dashboard() {
         ]);
 
         setStats(statsRes.data);
-        setBuildings(buildingsRes.data);
-        setTickets(ticketsRes.data);
+        console.log('Data from /api/buildings:', buildingsRes.data);
+        setBuildings(Array.isArray(buildingsRes.data) ? buildingsRes.data : (buildingsRes.data.data || []));
+        setTickets(Array.isArray(ticketsRes.data) ? ticketsRes.data : (ticketsRes.data.data || []));
       } catch (error) {
         console.error('Failed to load dashboard data', error);
       } finally {
@@ -122,19 +123,23 @@ export default function Dashboard() {
           <section>
             <h2 style={{ marginBottom: '1rem', color: 'var(--color-text, #333)' }}>รายการอาคาร</h2>
             <div className="building-grid">
-              {buildings.map((b) => (
-                <Link
-                  key={b.id}
-                  to={`/buildings/${b.id}`}
-                  className={`building-card ${b.brokenCount > 0 ? 'status-bad' : 'status-good'}`}
-                >
-                  <div className="building-icon">🏢</div>
-                  <h2 className="building-name">{b.name}</h2>
-                  <div className={`building-status ${b.brokenCount > 0 ? 'text-bad' : 'text-good'}`}>
-                    {b.brokenCount > 0 ? `เครื่องเสีย: ${b.brokenCount}` : 'สถานะ: ปกติ (0)'}
-                  </div>
-                </Link>
-              ))}
+              {buildings?.length > 0 ? (
+                buildings.map((b) => (
+                  <Link
+                    key={b.id}
+                    to={`/buildings/${b.id}`}
+                    className={`building-card ${b.brokenCount > 0 ? 'status-bad' : 'status-good'}`}
+                  >
+                    <div className="building-icon">🏢</div>
+                    <h2 className="building-name">{b.name}</h2>
+                    <div className={`building-status ${b.brokenCount > 0 ? 'text-bad' : 'text-good'}`}>
+                      {b.brokenCount > 0 ? `เครื่องเสีย: ${b.brokenCount}` : 'สถานะ: ปกติ (0)'}
+                    </div>
+                  </Link>
+                ))
+              ) : (
+                <div style={{ padding: '20px', color: '#666' }}>ไม่พบข้อมูลอาคาร...</div>
+              )}
             </div>
           </section>
 

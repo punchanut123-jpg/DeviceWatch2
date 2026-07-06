@@ -1,15 +1,24 @@
+import { Link } from 'react-router-dom';
+import './Header.css';
+
 export default function Header() {
   return (
-    <header style={{ 
-      backgroundColor: 'var(--color-primary)', 
-      color: 'white', 
-      padding: '1rem 2rem', 
-      display: 'flex', 
-      alignItems: 'center', 
-      gap: '1rem' 
-    }}>
-      <img src="/logo.jpg" alt="Logo" style={{ height: '40px', width: '40px', background: 'white', borderRadius: '50%' }} />
-      <span style={{ fontSize: '1.2rem', fontWeight: '600' }}>DeviceWatch - ระบบแจ้งซ่อมอุปกรณ์ คณะเทคโนโลยีสารสนเทศ</span>
+    <header className="header">
+      {/* ส่วนโลโก้และชื่อแบรนด์ (คลิกกลับหน้าแรก) */}
+      <Link to="/" className="header__brand">
+        <div className="header__logo-wrapper">
+          <img src="/logo.jpg" alt="Logo" className="header__logo" />
+        </div>
+        <div className="header__title-group">
+          <span className="header__title">DeviceWatch</span>
+          <span className="header__subtitle">คณะเทคโนโลยีสารสนเทศ</span>
+        </div>
+      </Link>
+
+      {/* ส่วนเมนูด้านขวา */}
+      <Link to="/admin/tickets" className="header__admin-link">
+        <span>⚙️</span> จัดการระบบ
+      </Link>
     </header>
   );
 }
