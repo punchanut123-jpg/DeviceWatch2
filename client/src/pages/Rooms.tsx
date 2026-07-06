@@ -20,7 +20,7 @@ export default function Rooms() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    axios.get(`http://localhost:3000/api/floors/${floorId}/rooms`)
+    axios.get(`/api/floors/${floorId}/rooms`)
       .then(res => setRooms(res.data))
       .catch(err => console.error(err));
   }, [floorId]);

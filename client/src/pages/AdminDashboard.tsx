@@ -18,7 +18,7 @@ export default function AdminDashboard() {
   const [filter, setFilter] = useState<'all' | 'open' | 'in_progress' | 'resolved'>('all');
 
   const fetchTickets = () => {
-    axios.get('http://localhost:3000/api/tickets')
+    axios.get('/api/tickets')
       .then(res => setTickets(res.data))
       .catch(err => console.error(err));
   };
@@ -27,7 +27,7 @@ export default function AdminDashboard() {
 
   const updateStatus = async (id: number, status: string) => {
     try {
-      await axios.patch(`http://localhost:3000/api/tickets/${id}`, { status });
+      await axios.patch(`/api/tickets/${id}`, { status });
       fetchTickets();
       toast.success('อัปเดตสถานะเรียบร้อยแล้ว');
     } catch (err) {

@@ -16,7 +16,7 @@ export default function Floors() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    axios.get(`http://localhost:3000/api/buildings/${buildingId}/floors`)
+    axios.get(`/api/buildings/${buildingId}/floors`)
       .then(res => setFloors(res.data))
       .catch(err => console.error(err));
   }, [buildingId]);
