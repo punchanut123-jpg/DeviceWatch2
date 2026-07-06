@@ -1,8 +1,16 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import Breadcrumb from '../components/Breadcrumb';
+import './Dashboard.css';
+
+interface Stats {
+  total: number;
+  normal: number;
+  broken: number;
+  under_repair: number;
+}
 
 interface Building {
   id: number;
@@ -10,57 +18,175 @@ interface Building {
   brokenCount: number;
 }
 
+interface Ticket {
+  id: number;
+  symptom: string;
+  status: 'open' | 'in_progress' | 'resolved';
+  reportedAt: string;
+  device: {
+    deviceCode: string;
+    room: {
+      roomNumber: string;
+    };
+  };
+}
+
 export default function Dashboard() {
+  const [stats, setStats] = useState<Stats | null>(null);
   const [buildings, setBuildings] = useState<Building[]>([]);
-  const navigate = useNavigate();
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get('http://localhost:3000/api/buildings')
-      .then(res => setBuildings(res.data))
-      .catch(err => console.error(err));
+    const fetchDashboardData = async () => {
+      try {
+        const [statsRes, buildingsRes, ticketsRes] = await Promise.all([
+          axios.get('/api/stats'),
+          axios.get('/api/buildings'),
+          axios.get('/api/tickets?limit=5'),
+        ]);
+
+        setStats(statsRes.data);
+        setBuildings(buildingsRes.data);
+        setTickets(ticketsRes.data);
+      } catch (error) {
+        console.error('Failed to load dashboard data', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
   }, []);
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
+        <Header />
+        <div style={{ textAlign: 'center', padding: '80px', color: 'var(--color-text-muted)' }}>
+          กำลังโหลดข้อมูล...
+        </div>
+      </div>
+    );
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'open':        return <span className="badge badge-open">รอซ่อม</span>;
+      case 'in_progress': return <span className="badge badge-in_progress">กำลังซ่อม</span>;
+      case 'resolved':    return <span className="badge badge-resolved">ซ่อมเสร็จ</span>;
+      default:            return <span className="badge">{status}</span>;
+    }
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
       <Header />
-      <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '1rem' }}>
-        <Breadcrumb items={[{ label: 'หน้าแรก' }]} />
-        <h2 style={{ marginBottom: '1.5rem' }}>รายการอาคาร</h2>
-        
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
-          gap: '1.5rem' 
-        }}>
-          {buildings.map(b => (
-            <div
-              key={b.id}
-              onClick={() => navigate(`/buildings/${b.id}`)}
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderRadius: '12px',
-                padding: '1.5rem',
-                borderLeft: `4px solid ${b.brokenCount > 0 ? 'var(--color-status-broken)' : 'var(--color-status-normal)'}`,
-                boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)',
-                cursor: 'pointer',
-                transition: 'transform 0.2s'
-              }}
-              onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
-              onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <h3 style={{ marginTop: 0, color: 'var(--color-primary)' }}>{b.name}</h3>
-              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>สถานะปัจจุบัน</p>
-              <div style={{ 
-                fontWeight: '600', 
-                color: b.brokenCount > 0 ? 'var(--color-status-broken)' : 'var(--color-status-normal)' 
-              }}>
-                {b.brokenCount > 0 ? `พบอุปกรณ์เสีย ${b.brokenCount} เครื่อง` : 'อุปกรณ์ใช้งานได้ปกติ'}
+      <main>
+        <div className="dashboard-container">
+          <Breadcrumb items={[{ label: 'หน้าแรก' }]} />
+
+          {/* 1. Stats Bar */}
+          <section className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-emoji">💻</div>
+              <div className="stat-info">
+                <h3>เครื่องทั้งหมด</h3>
+                <p className="stat-total">{stats?.total ?? 0}</p>
               </div>
             </div>
-          ))}
+            <div className="stat-card">
+              <div className="stat-emoji">✅</div>
+              <div className="stat-info">
+                <h3>ปกติ</h3>
+                <p className="stat-normal">{stats?.normal ?? 0}</p>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-emoji">🚨</div>
+              <div className="stat-info">
+                <h3>เสีย</h3>
+                <p className="stat-broken">{stats?.broken ?? 0}</p>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-emoji">🔧</div>
+              <div className="stat-info">
+                <h3>กำลังซ่อม</h3>
+                <p className="stat-repair">{stats?.under_repair ?? 0}</p>
+              </div>
+            </div>
+          </section>
+
+          {/* 2. Building Cards */}
+          <section>
+            <h2 style={{ marginBottom: '1rem', color: 'var(--color-text, #333)' }}>รายการอาคาร</h2>
+            <div className="building-grid">
+              {buildings.map((b) => (
+                <Link
+                  key={b.id}
+                  to={`/buildings/${b.id}`}
+                  className={`building-card ${b.brokenCount > 0 ? 'status-bad' : 'status-good'}`}
+                >
+                  <div className="building-icon">🏢</div>
+                  <h2 className="building-name">{b.name}</h2>
+                  <div className={`building-status ${b.brokenCount > 0 ? 'text-bad' : 'text-good'}`}>
+                    {b.brokenCount > 0 ? `เครื่องเสีย: ${b.brokenCount}` : 'สถานะ: ปกติ (0)'}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          {/* 3. Recent Tickets */}
+          <section className="recent-tickets">
+            <div className="tickets-header">
+              <h2>รายการแจ้งซ่อมล่าสุด</h2>
+              <Link to="/admin/tickets" className="link-see-all">ดูทั้งหมด &rarr;</Link>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table className="ticket-table">
+                <thead>
+                  <tr>
+                    <th>เวลา</th>
+                    <th>ห้อง</th>
+                    <th>เครื่อง</th>
+                    <th>อาการ</th>
+                    <th>สถานะ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tickets.length > 0 ? (
+                    tickets.map((t) => (
+                      <tr key={t.id}>
+                        <td>
+                          {new Date(t.reportedAt).toLocaleString('th-TH', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </td>
+                        <td>{t.device.room.roomNumber}</td>
+                        <td>{t.device.deviceCode}</td>
+                        <td>{t.symptom}</td>
+                        <td>{getStatusBadge(t.status)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
+                        ไม่มีรายการแจ้งซ่อม
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
       </main>
     </div>
   );
 }
-

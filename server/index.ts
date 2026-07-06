@@ -132,12 +132,24 @@ app.patch('/api/devices/:id', async (req: Request, res: Response) => {
 });
 
 // ─── Tickets ──────────────────────────────────────────────────────────────────
-app.get('/api/tickets', async (_req: Request, res: Response) => {
-  const tickets = await prisma.ticket.findMany({
-    include: { device: { include: { room: { include: { floor: { include: { building: true } } } } } } },
-    orderBy: { reportedAt: 'desc' },
-  });
-  res.json(tickets);
+app.get('/api/tickets', async (req: Request, res: Response) => {
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+
+  try {
+    const tickets = await prisma.ticket.findMany({
+      take: limit,
+      orderBy: { reportedAt: 'desc' },
+      include: {
+        device: {
+          include: { room: { include: { floor: { include: { building: true } } } } }
+        }
+      },
+    });
+    res.json(tickets);
+  } catch (error) {
+    console.error('Failed to fetch tickets:', error);
+    res.status(500).json({ error: 'Failed to fetch tickets' });
+  }
 });
 
 app.post('/api/tickets', async (req: Request, res: Response) => {
@@ -230,13 +242,18 @@ app.patch('/api/tickets/:id', async (req: Request, res: Response) => {
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
 app.get('/api/stats', async (_req: Request, res: Response) => {
-  const [totalDevices, brokenDevices, underRepair, openTickets] = await Promise.all([
-    prisma.device.count(),
-    prisma.device.count({ where: { status: 'broken' } }),
-    prisma.device.count({ where: { status: 'under_repair' } }),
-    prisma.ticket.count({ where: { status: { in: ['open', 'in_progress'] } } }),
-  ]);
-  res.json({ totalDevices, brokenDevices, underRepair, openTickets });
+  try {
+    const [total, normal, broken, under_repair] = await Promise.all([
+      prisma.device.count(),
+      prisma.device.count({ where: { status: 'normal' } }),
+      prisma.device.count({ where: { status: 'broken' } }),
+      prisma.device.count({ where: { status: 'under_repair' } }),
+    ]);
+    res.json({ total, normal, broken, under_repair });
+  } catch (error) {
+    console.error('Failed to fetch stats:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
 });
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
