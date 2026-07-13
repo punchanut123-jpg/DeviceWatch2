@@ -208,11 +208,11 @@ async function main() {
             posX: 40, posY: 10, width: 20, height: 20,
             devices: { create: generateGridDevices('26503', 30) }
           },
-          // ห้องที่เหลือไม่มีเครื่อง (สร้างแค่ตัวห้อง)
-          { roomNumber: '26504', roomName: 'ห้องพัก 26504', lineUserId: lineUserId, posX: 70, posY: 10, width: 20, height: 20 },
-          { roomNumber: '26505', roomName: 'ห้องพัก 26505', lineUserId: lineUserId, posX: 10, posY: 50, width: 20, height: 20 },
-          { roomNumber: '26506', roomName: 'ห้องพัก 26506', lineUserId: lineUserId, posX: 40, posY: 50, width: 20, height: 20 },
-          { roomNumber: '26501', roomName: 'ห้องพัก 26501', lineUserId: lineUserId, posX: 70, posY: 50, width: 20, height: 20 }
+          // ห้องพักที่มีเครื่องคอมพิวเตอร์ 1 เครื่องต่อห้อง
+          { roomNumber: '26504', roomName: 'ห้องพัก 26504', lineUserId: lineUserId, posX: 70, posY: 10, width: 20, height: 20, devices: { create: generateGridDevices('26504', 1) } },
+          { roomNumber: '26505', roomName: 'ห้องพัก 26505', lineUserId: lineUserId, posX: 10, posY: 50, width: 20, height: 20, devices: { create: generateGridDevices('26505', 1) } },
+          { roomNumber: '26506', roomName: 'ห้องพัก 26506', lineUserId: lineUserId, posX: 40, posY: 50, width: 20, height: 20, devices: { create: generateGridDevices('26506', 1) } },
+          { roomNumber: '26501', roomName: 'ห้องพัก 26501', lineUserId: lineUserId, posX: 70, posY: 50, width: 20, height: 20, devices: { create: generateGridDevices('26501', 1) } }
         ]
       }
     }
