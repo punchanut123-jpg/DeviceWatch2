@@ -1,33 +1,68 @@
-import { Link, useNavigate } from 'react-router-dom';
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { useBreadcrumb } from '../hooks/useBreadcrumb';
 
 interface Props {
-  items: { label: string; path?: string | number }[];
+  buildingId?: string;
+  floorId?: string;
+  roomId?: string;
+  items?: { label: string; path?: string }[];
 }
 
-export default function Breadcrumb({ items }: Props) {
-  const navigate = useNavigate();
+const Breadcrumb: React.FC<Props> = ({ buildingId, floorId, roomId, items }) => {
+  const { buildingName, floorName, roomName } = useBreadcrumb(buildingId, floorId, roomId);
 
-  return (
-    <nav style={{ margin: '1rem 0', color: 'var(--color-text-muted)' }}>
-      {items.map((item, index) => (
-        <span key={index}>
-          {item.path !== undefined ? (
-            typeof item.path === 'number' ? (
-              <span 
-                onClick={() => navigate(item.path as number)} 
-                style={{ color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline' }}
-              >
+  if (items) {
+    return (
+      <nav style={{ marginBottom: '1rem', fontSize: '0.95rem', color: '#64748b' }}>
+        {items.map((item, index) => (
+          <span key={index}>
+            {item.path ? (
+              <Link to={item.path} style={{ color: 'var(--color-primary, #1A4FA0)', textDecoration: 'none' }}>
+                {item.label}
+              </Link>
+            ) : (
+              <span style={{ color: index === items.length - 1 ? 'var(--color-text, #334155)' : '#64748b', fontWeight: index === items.length - 1 ? 'bold' : 'normal' }}>
                 {item.label}
               </span>
-            ) : (
-              <Link to={item.path} style={{ color: 'var(--color-primary)' }}>{item.label}</Link>
-            )
-          ) : (
-            item.label
-          )}
-          {index < items.length - 1 && <span style={{ margin: '0 8px' }}>&gt;</span>}
-        </span>
-      ))}
+            )}
+            {index < items.length - 1 && <span style={{ margin: '0 8px' }}>/</span>}
+          </span>
+        ))}
+      </nav>
+    );
+  }
+
+  return (
+    <nav style={{ marginBottom: '1rem', fontSize: '0.95rem', color: '#64748b' }}>
+      <Link to="/" style={{ color: 'var(--color-primary, #1A4FA0)', textDecoration: 'none' }}>🏠 หน้าแรก</Link>
+      
+      {buildingId && (
+        <>
+          <span style={{ margin: '0 8px' }}>/</span>
+          <Link to={`/buildings/${buildingId}`} style={{ color: 'var(--color-primary, #1A4FA0)', textDecoration: 'none' }}>
+            {buildingName}
+          </Link>
+        </>
+      )}
+
+      {floorId && (
+        <>
+          <span style={{ margin: '0 8px' }}>/</span>
+          <Link to={`/buildings/${buildingId}/floors/${floorId}`} style={{ color: 'var(--color-primary, #1A4FA0)', textDecoration: 'none' }}>
+            {floorName}
+          </Link>
+        </>
+      )}
+
+      {roomId && (
+        <>
+          <span style={{ margin: '0 8px' }}>/</span>
+          <span style={{ color: 'var(--color-text, #334155)', fontWeight: 'bold' }}>{roomName}</span>
+        </>
+      )}
     </nav>
   );
-}
+};
+
+export default Breadcrumb;

@@ -25,7 +25,7 @@ export default function Floors() {
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
       <Header />
       <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '1rem' }}>
-        <Breadcrumb items={[{ label: 'หน้าแรก', path: '/' }, { label: 'อาคาร IT' }, { label: 'เลือกชั้น' }]} />
+        <Breadcrumb buildingId={buildingId} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
           {floors.map(f => (
             <div 

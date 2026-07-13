@@ -1,7 +1,11 @@
 import { Link } from 'react-router-dom';
 import './Header.css';
 
-export default function Header() {
+interface HeaderProps {
+  showAdminLink?: boolean;
+}
+
+export default function Header({ showAdminLink = true }: HeaderProps) {
   return (
     <header className="header">
       {/* ส่วนโลโก้และชื่อแบรนด์ (คลิกกลับหน้าแรก) */}
@@ -16,9 +20,11 @@ export default function Header() {
       </Link>
 
       {/* ส่วนเมนูด้านขวา */}
-      <Link to="/admin/tickets" className="header__admin-link">
-        <span>⚙️</span> จัดการระบบ
-      </Link>
+      {showAdminLink && (
+        <Link to="/admin/tickets" className="header__admin-link">
+          <span>⚙️</span> จัดการระบบ
+        </Link>
+      )}
     </header>
   );
 }

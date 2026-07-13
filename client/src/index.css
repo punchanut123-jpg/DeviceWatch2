@@ -51,11 +51,11 @@
 }
 
 #root {
-  width: 1126px;
+  width: 100%;
   max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
+  margin: 0;
+  padding: 0;
+  text-align: left;
   min-height: 100svh;
   display: flex;
   flex-direction: column;
@@ -110,13 +110,8 @@ code {
   background: var(--code-bg);
 }
 
-/* Custom App styles */
-.dashboard-container {
-  padding: 40px 20px;
-  max-width: 1000px;
-  margin: 0 auto;
-  text-align: left;
-}
+/* Custom App styles — dashboard-container defined in Dashboard.css */
+
 
 .dashboard-header {
   margin-bottom: 40px;
@@ -222,3 +217,54 @@ code {
   color: #ef4444;
 }
 
+/* ─── Mobile Responsive & PWA Touch Targets ────────────────────────────────── */
+
+/* การปรับขนาดปุ่มให้กดง่ายบนมือถือ (min 44px) */
+button,
+.btn-primary,
+.btn-secondary,
+input,
+select {
+  min-height: 44px;
+  min-width: 44px;
+  box-sizing: border-box;
+}
+
+/* Responsive หน้า Dashboard (หน้า User) */
+.user-view .welcome-section {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+/* จัดการคอลัมน์ให้อยู่ตรงกลางหน้าจอด้วย Flexbox */
+.building-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 1rem 0;
+}
+
+/* Responsive ของ Device Grid (เผื่อหน้าห้อง) */
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 10px;
+  justify-content: center;
+}
+
+@media (max-width: 600px) {
+  .dashboard-container {
+    padding: 1rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr; /* สถิติเหลือ 2 คอลัมน์บนมือถือ */
+  }
+
+  .recent-tickets-table {
+    display: block;
+    overflow-x: auto; /* โต๊ะตารางสามารถเลื่อนซ้ายขวาได้ในมือถือ */
+    white-space: nowrap;
+  }
+}

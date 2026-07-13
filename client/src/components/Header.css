@@ -57,19 +57,36 @@
 
 /* ─── Admin Button ───────────────────────────────────────── */
 .header__admin-link {
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: white;
   text-decoration: none;
   background-color: rgba(255, 255, 255, 0.15);
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-weight: 500;
-  transition: background-color 0.2s;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-weight: 600;
+  transition: background-color 0.2s, transform 0.2s;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .header__admin-link:hover {
   background-color: rgba(255, 255, 255, 0.25);
+  transform: scale(1.05);
+}
+
+@media (max-width: 600px) {
+  .header {
+    padding: 0.8rem 1rem;
+  }
+  .header__title {
+    font-size: 1.1rem;
+  }
+  .header__subtitle {
+    display: none;
+  }
+  .header__admin-link {
+    padding: 8px 14px;
+    font-size: 0.85rem;
+  }
 }

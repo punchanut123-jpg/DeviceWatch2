@@ -22,14 +22,26 @@ export default function Devices() {
   const [symptom, setSymptom] = useState('');
   const [showModal, setShowModal] = useState(false);
 
-  const fetchDevices = () => {
-    axios.get(`/api/rooms/${roomId}/devices`)
-      .then(res => setDevices(res.data))
-      .catch(err => console.error(err));
+  // ดึงข้อมูลอุปกรณ์
+  const fetchDevicesData = async () => {
+    try {
+      const res = await axios.get(`/api/rooms/${roomId}/devices`);
+      setDevices(res.data);
+    } catch (err) {
+      console.error("Error fetching devices:", err);
+    }
   };
 
+  // useEffect สำหรับจัดการ Auto Refresh ในเบื้องหลัง
   useEffect(() => {
-    fetchDevices();
+    fetchDevicesData();
+
+    // ดึงข้อมูลใหม่ทุกๆ 10 วินาทีแบบเงียบๆ
+    const timer = setInterval(() => {
+      fetchDevicesData();
+    }, 10000);
+
+    return () => clearInterval(timer);
   }, [roomId]);
 
   const handleReport = async () => {
@@ -41,7 +53,7 @@ export default function Devices() {
       });
       setShowModal(false);
       setSymptom('');
-      fetchDevices();
+      await fetchDevicesData();
       toast.success('แจ้งซ่อมเรียบร้อยแล้ว');
     } catch (err) {
       toast.error('เกิดข้อผิดพลาดในการแจ้งซ่อม');
@@ -68,43 +80,86 @@ export default function Devices() {
     <div className="devices-container">
       <Header />
       <main className="devices-main">
-        <Breadcrumb items={[
-          { label: 'หน้าแรก', path: '/' },
-          { label: 'อาคาร IT', path: `/buildings/${buildingId}` },
-          { label: 'ผังห้อง', path: `/buildings/${buildingId}/floors/${floorId}` },
-          { label: 'อุปกรณ์' }
-        ]} />
+        <Breadcrumb buildingId={buildingId} floorId={floorId} roomId={roomId} />
 
-        {/* Stats Bar */}
-        <div className="stats-bar">
-          <div className="stat-item total"><span>{devices.length}</span> ทั้งหมด</div>
-          <div className="stat-item normal">{normalCount} ปกติ</div>
-          <div className="stat-item broken">{brokenCount} เสีย</div>
-          <div className="stat-item repair">{repairCount} กำลังซ่อม</div>
-        </div>
-
-        {/* CSS Grid Container */}
-        <div className="devices-grid">
-          {devices.map(device => (
-            <div
-              key={device.id}
-              title={`${device.deviceName} (${getStatusText(device.status)})`}
-              onClick={() => { setSelectedDevice(device); setShowModal(true); }}
-              className="device-card"
-              style={{ backgroundColor: getStatusColor(device.status) }}
-            >
-              <span className="device-icon">🖥️</span>
-              <span className="device-code">{device.deviceCode}</span>
+        {devices.length === 0 ? (
+          <div className="empty-devices-state">
+            <div className="empty-icon">📂</div>
+            <h3 className="empty-title">ไม่พบเครื่องคอมพิวเตอร์</h3>
+            <p className="empty-subtitle">ห้องปฏิบัติการนี้ไม่มีอุปกรณ์คอมพิวเตอร์ติดตั้งอยู่</p>
+          </div>
+        ) : (
+          <>
+            {/* Stats Bar */}
+            <div className="stats-bar">
+              <div className="stat-item total"><span>{devices.length}</span> ทั้งหมด</div>
+              <div className="stat-item normal">{normalCount} ปกติ</div>
+              <div className="stat-item broken">{brokenCount} เสีย</div>
+              <div className="stat-item repair">{repairCount} กำลังซ่อม</div>
             </div>
-          ))}
-        </div>
 
-        {/* Legend */}
-        <div className="legend">
-          <span className="legend-item"><div className="legend-dot normal"></div> ปกติ</span>
-          <span className="legend-item"><div className="legend-dot broken"></div> เสีย</span>
-          <span className="legend-item"><div className="legend-dot repair"></div> กำลังซ่อม</span>
-        </div>
+            {devices.length <= 2 ? (
+              /* List View for 1-2 devices */
+              <div className="devices-list-view">
+                {devices.map(device => {
+                  let badgeText = 'ปกติ';
+                  let badgeClass = 'ok';
+                  if (device.status === 'broken') {
+                    badgeText = 'เสีย';
+                    badgeClass = 'broken';
+                  } else if (device.status === 'under_repair') {
+                    badgeText = 'กำลังซ่อม';
+                    badgeClass = 'repair';
+                  }
+
+                  return (
+                    <div
+                      key={device.id}
+                      onClick={() => { setSelectedDevice(device); setShowModal(true); }}
+                      className={`device-list-item-card status-${device.status}`}
+                    >
+                      <div className="device-list-info">
+                        <span className="device-list-avatar">🖥️</span>
+                        <div className="device-list-details">
+                          <h3>{device.deviceName}</h3>
+                          <span>{device.deviceCode}</span>
+                        </div>
+                      </div>
+                      <span className={`list-badge ${badgeClass}`}>
+                        {badgeText}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Grid View for > 2 devices */
+              <>
+                <div className="devices-grid">
+                  {devices.map(device => (
+                    <div
+                      key={device.id}
+                      title={`${device.deviceName} (${getStatusText(device.status)})`}
+                      onClick={() => { setSelectedDevice(device); setShowModal(true); }}
+                      className="device-card"
+                      style={{ backgroundColor: getStatusColor(device.status) }}
+                    >
+                      <span className="device-icon">🖥️</span>
+                      <span className="device-code">{device.deviceCode}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Legend */}
+                <div className="legend">
+                  <span className="legend-item"><div className="legend-dot normal"></div> ปกติ</span>
+                  <span className="legend-item"><div className="legend-dot broken"></div> เสีย</span>
+                  <span className="legend-item"><div className="legend-dot repair"></div> กำลังซ่อม</span>
+                </div>
+              </>
+            )}
+          </>
+        )}
       </main>
 
       {/* Modal แจ้งซ่อม */}
@@ -153,6 +208,7 @@ export default function Devices() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

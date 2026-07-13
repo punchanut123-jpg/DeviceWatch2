@@ -87,6 +87,139 @@ async function main() {
 
     await prisma.device.createMany({ data: devices });
   }
+
+  // ==========================================
+  // ส่วนที่เพิ่มใหม่: ข้อมูลชั้น 4 และห้องปฏิบัติการ
+  // ==========================================
+
+  // ฟังก์ชันช่วยสร้างข้อมูลเครื่องคอมพิวเตอร์และจัดเรียงพิกัดเป็น Grid
+  const generateGridDevices = (roomNumber: string, count: number) => {
+    const devices = [];
+    const cols = 6; // กำหนดให้เรียงเครื่องเป็นแถว แถวละ 6 เครื่อง
+    
+    for (let i = 1; i <= count; i++) {
+      const row = Math.floor((i - 1) / cols);
+      const col = (i - 1) % cols;
+      
+      devices.push({
+        deviceCode: `${roomNumber}-${String(i).padStart(2, '0')}`,
+        deviceName: `คอมพิวเตอร์ ${i}`,
+        status: 'normal',
+        posX: 5 + (col * 15), // ขยับแกน X ทีละ 15 เพื่อไม่ให้ซ้อนกัน
+        posY: 5 + (row * 15), // ขยับแกน Y ทีละ 15 เพื่อไม่ให้ซ้อนกัน
+      });
+    }
+    return devices;
+  };
+
+  // ใช้ lineUserId ตามที่ระบุมา
+  const lineUserId = "Uafdc29a4602455f7cd66cacb080f05c2";
+
+  console.log('กำลังสร้างข้อมูลชั้น 4...');
+
+  // บันทึกข้อมูลชั้น 4 พร้อมห้องและเครื่องคอมพิวเตอร์แบบรวดเดียว
+  await prisma.floor.create({
+    data: {
+      floorNumber: 4,
+      name: 'ชั้น 4',
+      // สำคัญ: อย่าลืมตรวจสอบว่าคุณมีตัวแปร building.id ประกาศไว้แล้วจากโค้ดชั้น 2
+      buildingId: building.id, 
+      rooms: {
+        create: [
+          {
+            roomNumber: '26402',
+            roomName: 'ห้องปฏิบัติการคอมพิวเตอร์ 26402',
+            lineUserId: lineUserId,
+            posX: 5,
+            posY: 42,
+            width: 18,
+            height: 20,
+            devices: {
+              create: generateGridDevices('26402', 36)
+            }
+          },
+          {
+            roomNumber: '26403',
+            roomName: 'ห้องปฏิบัติการคอมพิวเตอร์ 26403',
+            lineUserId: lineUserId,
+            posX: 5,
+            posY: 22,
+            width: 18,
+            height: 18,
+            devices: {
+              create: generateGridDevices('26403', 38)
+            }
+          },
+          {
+            roomNumber: '26404',
+            roomName: 'ห้องปฏิบัติการคอมพิวเตอร์ 26404',
+            lineUserId: lineUserId,
+            posX: 75,
+            posY: 22,
+            width: 18,
+            height: 18,
+            devices: {
+              create: generateGridDevices('26404', 36)
+            }
+          },
+          {
+            roomNumber: '26406',
+            roomName: 'ห้องปฏิบัติการคอมพิวเตอร์ 26406',
+            lineUserId: lineUserId,
+            posX: 75,
+            posY: 65,
+            width: 18,
+            height: 18,
+            devices: {
+              create: generateGridDevices('26406', 20)
+            }
+          }
+        ]
+      }
+    }
+  });
+
+  console.log('เพิ่มข้อมูลชั้น 4 และอุปกรณ์ทั้งหมดเรียบร้อยแล้ว!');
+
+  // ==========================================
+  // ส่วนที่เพิ่มใหม่: ข้อมูลชั้น 5
+  // ==========================================
+  console.log('กำลังสร้างข้อมูลชั้น 5...');
+
+  await prisma.floor.create({
+    data: {
+      floorNumber: 5,
+      name: 'ชั้น 5', // ปรับแก้จาก floorName เป็น name เพื่อไม่ให้เกิด Error ใน Prisma Client
+      buildingId: building.id,
+      rooms: {
+        create: [
+          // ห้องที่มีคอมพิวเตอร์
+          {
+            roomNumber: '26502',
+            roomName: 'ห้องปฏิบัติการคอมพิวเตอร์ 26502',
+            lineUserId: lineUserId,
+            posX: 10, posY: 10, width: 20, height: 20,
+            devices: { create: generateGridDevices('26502', 30) }
+          },
+          {
+            roomNumber: '26503',
+            roomName: 'ห้องปฏิบัติการคอมพิวเตอร์ 26503',
+            lineUserId: lineUserId,
+            posX: 40, posY: 10, width: 20, height: 20,
+            devices: { create: generateGridDevices('26503', 30) }
+          },
+          // ห้องที่เหลือไม่มีเครื่อง (สร้างแค่ตัวห้อง)
+          { roomNumber: '26504', roomName: 'ห้องพัก 26504', lineUserId: lineUserId, posX: 70, posY: 10, width: 20, height: 20 },
+          { roomNumber: '26505', roomName: 'ห้องพัก 26505', lineUserId: lineUserId, posX: 10, posY: 50, width: 20, height: 20 },
+          { roomNumber: '26506', roomName: 'ห้องพัก 26506', lineUserId: lineUserId, posX: 40, posY: 50, width: 20, height: 20 },
+          { roomNumber: '26501', roomName: 'ห้องพัก 26501', lineUserId: lineUserId, posX: 70, posY: 50, width: 20, height: 20 }
+        ]
+      }
+    }
+  });
+
+  console.log('สร้างข้อมูลชั้น 5 สำเร็จ!');
+
   console.log("Seeding completed.");
 }
 
