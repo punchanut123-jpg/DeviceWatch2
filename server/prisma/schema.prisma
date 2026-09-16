@@ -1,0 +1,77 @@
+// This is your Prisma schema file
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Building {
+  id     Int     @id @default(autoincrement())
+  name   String
+  floors Floor[]
+}
+
+model Floor {
+  id         Int      @id @default(autoincrement())
+  number     Int
+  buildingId Int
+  building   Building @relation(fields: [buildingId], references: [id])
+  rooms      Room[]
+}
+
+model Room {
+  id         Int      @id @default(autoincrement())
+  name       String
+  floorId    Int
+  floor      Floor    @relation(fields: [floorId], references: [id])
+  lineUserId String?
+  devices    Device[]
+}
+
+model Device {
+  id      Int      @id @default(autoincrement())
+  name    String
+  posX    Float?
+  posY    Float?
+  status  String   @default("normal") // normal | broken | under_repair
+  roomId  Int
+  room    Room     @relation(fields: [roomId], references: [id])
+  tickets Ticket[]
+}
+
+model Ticket {
+  id               Int      @id @default(autoincrement())
+  description      String   @db.Text
+  status           String   @default("open") // open | in_progress | resolved
+  deviceId         Int
+  device           Device   @relation(fields: [deviceId], references: [id])
+  reportedByUserId Int?
+  reportedBy       User?    @relation(fields: [reportedByUserId], references: [id])
+  studentId        Int?
+  student          Student? @relation(fields: [studentId], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Student {
+  id           Int      @id @default(autoincrement())
+  name         String
+  studentId    String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  tickets      Ticket[]
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  role        String   // 'student' | 'teacher'
+  name        String
+  studentId   String?
+  createdAt   DateTime @default(now())
+  tickets     Ticket[]
+}

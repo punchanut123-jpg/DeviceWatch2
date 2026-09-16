@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # ── 1. MySQL 8.0 Database ──────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: devicewatch-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-devicewatch}
+      MYSQL_USER: ${MYSQL_USER:-devicewatch_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-devicewatch_pass123}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── 2. Node.js Express Backend ────────────────────────────
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: devicewatch-server
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-devicewatch_user}:${MYSQL_PASSWORD:-devicewatch_pass123}@db:3306/${MYSQL_DATABASE:-devicewatch}
+      JWT_SECRET: ${JWT_SECRET:-devicewatch-jwt-secret-change-me-in-production-2024}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin1234}
+      TEACHER_USERNAME: ${TEACHER_USERNAME:-teacher}
+      TEACHER_PASSWORD: ${TEACHER_PASSWORD:-teacher1234}
+      LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN}
+      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost,http://localhost:80}
+      PORT: 3000
+      RUN_SEED: "true"
+    ports:
+      - "3000:3000"
+
+  # ── 3. React Frontend served via Nginx ─────────────────────
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: devicewatch-client
+    restart: always
+    depends_on:
+      - server
+    ports:
+      - "80:80"
+
+volumes:
+  mysql_data:
+    driver: local
