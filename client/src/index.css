@@ -2726,3 +2726,224 @@ a { color: inherit; text-decoration: none; }
   flex-shrink: 0;
 }
 
+/* ── Admin Shell (shared sidebar + topbar) ─────────────────── */
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.5rem;
+}
+
+.admin-brand-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: white;
+  padding: 2px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.admin-brand-name {
+  font-family: var(--font-en);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: white;
+  line-height: 1.2;
+}
+
+.admin-brand-role {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 0.1rem;
+}
+
+.admin-nav-icon {
+  flex-shrink: 0;
+}
+
+.admin-nav-spacer {
+  flex: 1;
+}
+
+.admin-nav-logout {
+  margin-top: auto;
+}
+
+.admin-topbar-title {
+  font-weight: 700;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-topbar-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.admin-main {
+  padding: 1.25rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.admin-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 1.5rem 0 0.75rem;
+}
+
+.admin-section-head .section-title {
+  margin-bottom: 0;
+}
+
+/* ── Stat card icon + tone ──────────────────────────────────── */
+.stat-card-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 0.5rem;
+}
+
+.stat-card-tone-default .stat-value { color: var(--text); }
+.stat-card-tone-default .stat-card-icon { background: var(--primary-subtle); color: var(--primary); }
+
+.stat-card-tone-success .stat-value { color: var(--success); }
+.stat-card-tone-success .stat-card-icon { background: var(--success-bg); color: var(--success-dark); }
+
+.stat-card-tone-danger .stat-value { color: var(--danger); }
+.stat-card-tone-danger .stat-card-icon { background: var(--danger-bg); color: var(--danger-dark); }
+
+.stat-card-tone-warning .stat-value { color: var(--warning); }
+.stat-card-tone-warning .stat-card-icon { background: var(--warning-bg); color: var(--warning-dark); }
+
+/* ── Ticket card extras ─────────────────────────────────────── */
+.ticket-card-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ticket-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ticket-card-id {
+  font-family: var(--font-en);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+}
+
+.ticket-device-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+  margin-top: 0.75rem;
+}
+
+.ticket-room-line {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.ticket-reporter {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.ticket-desc-box {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.55;
+  margin: 0.75rem 0;
+}
+
+.ticket-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.ticket-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Button variants ────────────────────────────────────────── */
+.btn-pill {
+  border-radius: 20px;
+  padding: 0.4rem 1rem;
+}
+
+.btn-danger-outline {
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+.btn-danger-outline:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn-danger-soft {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.btn-danger-soft:hover {
+  background: var(--danger);
+  color: white;
+}
+
+.btn-danger-outline svg,
+.btn-icon {
+  flex-shrink: 0;
+}
+
+/* ── Pagination info ────────────────────────────────────────── */
+.pagination-info {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* ── Empty state icon (lucide) ──────────────────────────────── */
+.empty-state-icon svg {
+  width: 44px;
+  height: 44px;
+  stroke-width: 1.5;
+  opacity: 0.9;
+}
