@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import type { Device, DeviceStatus } from '../types';
 import {
   groupDevicesIntoPairsAndRows,
@@ -16,6 +16,7 @@ import {
   Plus,
   Minus,
   RotateCcw,
+  Info,
 } from 'lucide-react';
 
 interface RoomLayout2DProps {
@@ -35,7 +36,37 @@ export default function RoomLayout2D({
   const [statusFilter, setStatusFilter] = useState<'all' | DeviceStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredDevice, setHoveredDevice] = useState<Device | null>(null);
-  const [scale, setScale] = useState(1);
+  // zoomLevel: 1.0 = fit-to-container, higher = zoomed in
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [fitScale, setFitScale] = useState<number | null>(null);
+
+  const stageRef = useRef<HTMLDivElement>(null);
+
+  // ── ResizeObserver: measure container width, compute fitScale ──
+  useEffect(() => {
+    if (!stageRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const containerW = entry.contentRect.width;
+        if (containerW > 0) {
+          const computed = containerW / 1000; // base canvas = 1000px wide
+          setFitScale(computed);
+        }
+      }
+    });
+
+    observer.observe(stageRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // effective pixel scale = fitScale * zoomLevel (capped to 2.2x fit)
+  const MAX_ZOOM = 2.2;
+  const MIN_ZOOM = 0.7;
+  const effectiveScale = fitScale !== null ? fitScale * zoomLevel : zoomLevel;
+
+  // zoom percent relative to "fit" (1.0 zoom = 100%)
+  const zoomPercent = Math.round(zoomLevel * 100);
 
   // Group devices using pure utility function (1000x620px base reference resolution)
   const groupedData = useMemo(() => {
@@ -76,6 +107,10 @@ export default function RoomLayout2D({
         return <CheckCircle2 size={size} color={color} />;
     }
   };
+
+  // Canvas dimensions at current effective scale
+  const canvasW = baseWidth * effectiveScale;
+  const canvasH = baseHeight * effectiveScale;
 
   return (
     <div className="rl2d-wrapper">
@@ -185,89 +220,104 @@ export default function RoomLayout2D({
           </button>
         </div>
 
-        <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
-          💡 คลิกที่การ์ดเครื่องเพื่อดูรายละเอียด / แจ้งซ่อม
+        <div style={{ fontSize: '0.75rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+          <Info size={13} color="#94A3B8" />
+          คลิกที่การ์ดเครื่องเพื่อดูรายละเอียด / แจ้งซ่อม
         </div>
       </div>
 
       {/* Main View Area */}
       {viewMode === 'floorplan' ? (
-        <div className="rl2d-stage">
-          {/* Fixed Coordinate System Canvas (1000x620px scaled with transform: scale) */}
+        <div className="rl2d-stage" ref={stageRef}>
+          {/*
+            Outer wrapper sized to the scaled canvas dimensions.
+            This prevents the stage from clipping the canvas when zoomed.
+          */}
           <div
-            className="rl2d-fixed-canvas"
+            className="rl2d-canvas-outer"
             style={{
-              width: baseWidth,
-              height: baseHeight,
-              transform: `scale(${scale})`,
+              width: fitScale !== null ? canvasW : '100%',
+              height: fitScale !== null ? canvasH : baseHeight,
+              position: 'relative',
+              flexShrink: 0,
             }}
           >
-            {/* Non-DB Decorative Layer: Front Screen / Whiteboard Banner */}
-            <div className="rl2d-screen-bar">
-              <span className="rl2d-screen-text">
-                <Monitor size={13} color="#185FA5" /> กระดาน / จอภาพหน้าห้อง
-              </span>
-            </div>
+            {/* Fixed Coordinate System Canvas (1000x620px, scaled from top-left) */}
+            <div
+              className="rl2d-fixed-canvas"
+              style={{
+                width: baseWidth,
+                height: baseHeight,
+                transform: `scale(${effectiveScale})`,
+                transformOrigin: 'top left',
+              }}
+            >
+              {/* Non-DB Decorative Layer: Front Screen / Whiteboard Banner */}
+              <div className="rl2d-screen-bar">
+                <span className="rl2d-screen-text">
+                  <Monitor size={13} color="#185FA5" /> กระดาน / จอภาพหน้าห้อง
+                </span>
+              </div>
 
-            {/* Non-DB Decorative Layer: Teacher Podium */}
-            <div className="rl2d-teacher-box">
-              <Monitor size={14} color="#0284C7" /> โต๊ะผู้สอน
-            </div>
+              {/* Non-DB Decorative Layer: Teacher Podium */}
+              <div className="rl2d-teacher-box">
+                <Monitor size={14} color="#0284C7" /> โต๊ะผู้สอน
+              </div>
 
-            {/* Non-DB Decorative Layer: Entrance Door */}
-            <div className="rl2d-door-bar" />
-            <div className="rl2d-door-text">
-              <DoorOpen size={14} color="#B45309" /> ประตูทางเข้า
-            </div>
+              {/* Non-DB Decorative Layer: Entrance Door */}
+              <div className="rl2d-door-bar" />
+              <div className="rl2d-door-text">
+                <DoorOpen size={14} color="#B45309" /> ประตูทางเข้า
+              </div>
 
-            {/* Non-DB Decorative Layer: Window Glass */}
-            <div className="rl2d-window-bar" />
+              {/* Non-DB Decorative Layer: Window Glass */}
+              <div className="rl2d-window-bar" />
 
-            {/* Render Paired Desk Containers at Exact Pixel Coordinates */}
-            {rows.map((row) =>
-              row.pairs.map((pair) => {
-                // Check if any device in pair matches active filter
-                const hasVisibleDevice = pair.devices.some((d) => filteredIds.has(d.id));
-                if (!hasVisibleDevice) return null;
+              {/* Render Paired Desk Containers at Exact Pixel Coordinates */}
+              {rows.map((row) =>
+                row.pairs.map((pair) => {
+                  const hasVisibleDevice = pair.devices.some((d) => filteredIds.has(d.id));
+                  if (!hasVisibleDevice) return null;
 
-                return (
-                  <div
-                    key={pair.id}
-                    className="rl2d-pair-container"
-                    style={{
-                      left: `${pair.centerPixelX}px`,
-                      top: `${pair.centerPixelY}px`,
-                    }}
-                  >
-                    {pair.devices.map((device) => {
-                      if (!filteredIds.has(device.id)) return null;
+                  return (
+                    <div
+                      key={pair.id}
+                      className="rl2d-pair-container"
+                      style={{
+                        left: `${pair.centerPixelX}px`,
+                        top: `${pair.centerPixelY}px`,
+                      }}
+                    >
+                      {pair.devices.map((device) => {
+                        if (!filteredIds.has(device.id)) return null;
 
-                      const conf = STATUS_TOKENS[device.status] || STATUS_TOKENS.normal;
-                      const isSelected = selectedDeviceId === device.id;
-                      const devCode = device.name.replace(/^PC-/i, 'PC-');
+                        const conf = STATUS_TOKENS[device.status] || STATUS_TOKENS.normal;
+                        const isSelected = selectedDeviceId === device.id;
+                        const devCode = device.name.replace(/^PC-/i, 'PC-');
 
-                      return (
-                        <div
-                          key={device.id}
-                          className={`rl2d-flat-card rl2d-status-${device.status} ${
-                            isSelected ? 'selected' : ''
-                          }`}
-                          onClick={() => onDeviceClick(device)}
-                          onMouseEnter={() => setHoveredDevice(device)}
-                          onMouseLeave={() => setHoveredDevice(null)}
-                          title={`${device.name} (${conf.label})`}
-                        >
-                          <div className="rl2d-icon-badge" style={{ background: conf.iconBg }}>
-                            {renderStatusIcon(device.status, 13)}
+                        return (
+                          <div
+                            key={device.id}
+                            className={`rl2d-flat-card rl2d-status-${device.status} ${
+                              isSelected ? 'selected' : ''
+                            }`}
+                            onClick={() => onDeviceClick(device)}
+                            onMouseEnter={() => setHoveredDevice(device)}
+                            onMouseLeave={() => setHoveredDevice(null)}
+                            title={`${device.name} (${conf.label})`}
+                          >
+                            <div className="rl2d-icon-badge" style={{ background: conf.iconBg }}>
+                              {renderStatusIcon(device.status, 13)}
+                            </div>
+                            <span className="rl2d-code">{devCode}</span>
                           </div>
-                          <span className="rl2d-code">{devCode}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })
-            )}
+                        );
+                      })}
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
 
           {/* Hover Tooltip */}
@@ -298,9 +348,11 @@ export default function RoomLayout2D({
                 สถานะ: {renderStatusIcon(hoveredDevice.status, 12)}{' '}
                 {STATUS_TOKENS[hoveredDevice.status]?.label || 'ปกติ'}
               </div>
-              <div style={{ color: '#94A3B8', fontSize: '0.7rem', marginTop: 2 }}>
-                พิกัดจริง: ({hoveredDevice.posX}%, {hoveredDevice.posY}%)
-              </div>
+              {hoveredDevice.posX !== null && hoveredDevice.posY !== null && (
+                <div style={{ color: '#94A3B8', fontSize: '0.7rem', marginTop: 2 }}>
+                  พิกัดจริง: ({hoveredDevice.posX}%, {hoveredDevice.posY}%)
+                </div>
+              )}
             </div>
           )}
 
@@ -308,25 +360,25 @@ export default function RoomLayout2D({
           <div className="rl2d-zoom-wrap">
             <button
               className="rl2d-zoom-btn"
-              onClick={() => setScale((s) => Math.min(1.4, s + 0.1))}
+              onClick={() => setZoomLevel((z) => Math.min(MAX_ZOOM, parseFloat((z + 0.1).toFixed(2))))}
               title="ขยาย"
             >
               <Plus size={16} />
             </button>
             <button
               className="rl2d-zoom-btn"
-              onClick={() => setScale((s) => Math.max(0.6, s - 0.1))}
+              onClick={() => setZoomLevel((z) => Math.max(MIN_ZOOM, parseFloat((z - 0.1).toFixed(2))))}
               title="ย่อ"
             >
               <Minus size={16} />
             </button>
             <button
               className="rl2d-zoom-btn"
-              onClick={() => setScale(1)}
+              onClick={() => setZoomLevel(1)}
               style={{ fontSize: '0.7rem', fontWeight: 600, width: 'auto', padding: '0 8px' }}
-              title="รีเซ็ต 100%"
+              title="รีเซ็ตพอดีจอ"
             >
-              <RotateCcw size={13} style={{ marginRight: 3 }} /> 100%
+              <RotateCcw size={13} style={{ marginRight: 3 }} /> {zoomPercent}%
             </button>
           </div>
         </div>

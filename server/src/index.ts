@@ -22,13 +22,14 @@ app.use(
   })
 );
 
-// Dynamic CORS configuration based on process.env.CORS_ORIGIN
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
   : [
       'http://localhost:5173',
+      'http://localhost:5174',
       'http://localhost:4173',
       'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174',
     ];
 
 app.use(
