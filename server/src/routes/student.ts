@@ -101,7 +101,9 @@ router.get('/history', requireAuth, async (req: AuthRequest, res) => {
         device: {
           include: {
             room: {
-              include: {
+              select: {
+                id: true,
+                name: true,
                 floor: {
                   include: { building: true }
                 }

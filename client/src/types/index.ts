@@ -66,6 +66,7 @@ export interface Ticket {
   device?: {
     name: string;
     room?: {
+      id: number;
       name: string;
       floor?: {
         number: number;

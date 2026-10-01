@@ -2511,3 +2511,218 @@ a { color: inherit; text-decoration: none; }
   height: 14px;
   background: var(--border);
 }
+
+/* ── MyReports page ─────────────────────────────────────────── */
+
+/* ── Stat summary row (4 blocks) ── */
+.report-stats-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .report-stats-row { grid-template-columns: repeat(4, 1fr); }
+}
+
+.report-stat-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  box-shadow: var(--shadow-sm);
+  border-left: 4px solid transparent;
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.report-stat-block:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.report-stat-all    { border-left-color: var(--primary-light); }
+.report-stat-open   { border-left-color: var(--danger); }
+.report-stat-repair { border-left-color: var(--warning); }
+.report-stat-resolved { border-left-color: var(--success); }
+
+.report-stat-value {
+  font-family: var(--font-en);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+
+.report-stat-all    .report-stat-value { color: var(--primary-light); }
+.report-stat-open   .report-stat-value { color: var(--danger-dark); }
+.report-stat-repair .report-stat-value { color: var(--warning-dark); }
+.report-stat-resolved .report-stat-value { color: var(--success-dark); }
+
+.report-stat-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ── Tab count badge ── */
+.report-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-family: var(--font-en);
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.07);
+  color: inherit;
+  margin-left: 0.3rem;
+}
+
+.filter-tab.active .report-tab-count {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Ticket list ── */
+.report-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding-bottom: 2rem;
+}
+
+/* ── Ticket Card ── */
+.report-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: flex;
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+
+.report-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* Left accent bar */
+.report-card-bar {
+  width: 5px;
+  flex-shrink: 0;
+}
+
+.report-card-open        .report-card-bar { background: var(--danger); }
+.report-card-in_progress .report-card-bar { background: var(--warning); }
+.report-card-resolved    .report-card-bar { background: var(--success); }
+
+.report-card-body {
+  flex: 1;
+  padding: 1rem 1.25rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.report-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.report-card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.report-ticket-id {
+  font-family: var(--font-en);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+}
+
+/* Device name row */
+.report-device-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.report-deleted {
+  font-style: italic;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+/* Location row */
+.report-location {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* Description box */
+.report-desc-box {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.9rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Metadata row */
+.report-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.74rem;
+  color: var(--text-dim);
+}
+
+.report-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Room link button */
+.report-room-btn {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.65rem;
+  min-height: 30px;
+  border-radius: 20px;
+  flex-shrink: 0;
+}
+
