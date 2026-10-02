@@ -17,8 +17,11 @@ import {
 } from 'lucide-react';
 
 interface RoomLayoutEditorProps {
+  roomId?: number;
   roomName: string;
   initialDevices: Device[];
+  allRooms?: Array<{ id: number; name: string; floor: { number: number } }>;
+  onSelectRoom?: (roomId: number) => void;
   onSave: (devices: Array<{ id: number; posX: number | null; posY: number | null }>) => Promise<void>;
   onBack?: () => void;
 }
@@ -62,27 +65,34 @@ function DropRipple({ x, y, onDone }: { x: number; y: number; onDone: () => void
 }
 
 export default function RoomLayoutEditor({
+  roomId,
   roomName,
   initialDevices,
+  allRooms,
+  onSelectRoom,
   onSave,
   onBack,
 }: RoomLayoutEditorProps) {
   const [devices, setDevices] = useState<Device[]>(initialDevices);
+  const [lastSavedDevices, setLastSavedDevices] = useState<Device[]>(initialDevices);
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [draggedDeviceId, setDraggedDeviceId] = useState<number | null>(null);
   const [isDragOverCanvas, setIsDragOverCanvas] = useState(false);
+  const [isDragOverSidebar, setIsDragOverSidebar] = useState(false);
   // Gamification state
   const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
   const [lastDroppedId, setLastDroppedId] = useState<number | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
+  const [showDetailedList, setShowDetailedList] = useState(false);
   const rippleCounter = useRef(0);
 
   const canvasRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setDevices(initialDevices);
+    setLastSavedDevices(initialDevices);
   }, [initialDevices]);
 
   const assignedDevices = devices.filter((d) => d.posX !== null && d.posY !== null);
@@ -141,6 +151,23 @@ export default function RoomLayoutEditor({
     setDraggedDeviceId(null);
   };
 
+  const handleSidebarDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setIsDragOverSidebar(true);
+  };
+
+  const handleSidebarDragLeave = () => setIsDragOverSidebar(false);
+
+  const handleSidebarDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOverSidebar(false);
+    if (draggedDeviceId === null) return;
+
+    handleUnassignDevice(draggedDeviceId);
+    setDraggedDeviceId(null);
+  };
+
   const handleUnassignDevice = (id: number) => {
     setDevices((prev) =>
       prev.map((dev) => (dev.id === id ? { ...dev, posX: null, posY: null } : dev))
@@ -149,7 +176,14 @@ export default function RoomLayoutEditor({
   };
 
   const handleReset = () => {
-    setDevices(initialDevices);
+    setDevices(lastSavedDevices);
+    setSelectedDeviceId(null);
+    setSaveMessage(null);
+    setShowCelebration(false);
+  };
+
+  const handleClearAll = () => {
+    setDevices((prev) => prev.map((dev) => ({ ...dev, posX: null, posY: null })));
     setSelectedDeviceId(null);
     setSaveMessage(null);
     setShowCelebration(false);
@@ -161,6 +195,7 @@ export default function RoomLayoutEditor({
     try {
       const payload = devices.map((d) => ({ id: d.id, posX: d.posX, posY: d.posY }));
       await onSave(payload);
+      setLastSavedDevices(devices);
       setSaveMessage({ text: '✅ บันทึกตำแหน่งผังห้องสำเร็จแล้ว!', type: 'success' });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
@@ -270,7 +305,32 @@ export default function RoomLayoutEditor({
             )}
             <div>
               <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 8 }}>
-                🗺️ จัดตำแหน่งผังห้อง <span style={{ color: '#2563EB' }}>{roomName}</span>
+                🗺️ จัดตำแหน่งผังห้อง{' '}
+                {allRooms && allRooms.length > 0 && onSelectRoom ? (
+                  <select
+                    value={roomId}
+                    onChange={(e) => onSelectRoom(Number(e.target.value))}
+                    style={{
+                      fontSize: '1.05rem',
+                      fontWeight: 800,
+                      color: '#2563EB',
+                      background: '#EFF6FF',
+                      border: '1.5px solid #93C5FD',
+                      borderRadius: '8px',
+                      padding: '0.2rem 0.65rem',
+                      cursor: 'pointer',
+                      outline: 'none',
+                    }}
+                  >
+                    {allRooms.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        ห้อง {r.name} (ชั้น {r.floor.number})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span style={{ color: '#2563EB' }}>{roomName}</span>
+                )}
               </h2>
               <div style={{ fontSize: '0.78rem', color: '#64748B', marginTop: 2 }}>
                 ลากการ์ดอุปกรณ์มาวางบนผังห้อง และกดบันทึกพิกัดจริง
@@ -294,8 +354,23 @@ export default function RoomLayoutEditor({
               </span>
             )}
             <button
+              onClick={handleClearAll}
+              disabled={isSaving}
+              title="ดึงอุปกรณ์ทั้งหมดออกจากผังห้องเป็นห้องว่าง"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '0.5rem 0.9rem', fontSize: '0.85rem', fontWeight: 600,
+                color: '#DC2626', background: '#FEF2F2', border: '1px solid #FCA5A5',
+                borderRadius: '8px', cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <Trash2 size={15} /> ล้างผังห้อง (เป็นห้องว่าง)
+            </button>
+            <button
               onClick={handleReset}
               disabled={isSaving}
+              title="รีเซ็ตกลับสู่ค่าเดิมที่บันทึกไว้ล่าสุด"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '0.5rem 0.9rem', fontSize: '0.85rem', fontWeight: 600,
@@ -303,7 +378,7 @@ export default function RoomLayoutEditor({
                 borderRadius: '8px', cursor: 'pointer',
               }}
             >
-              <RotateCcw size={15} /> รีเซ็ต
+              <RotateCcw size={15} /> รีเซ็ตค่าบันทึกเดิม
             </button>
             <button
               onClick={handleSaveClick}
@@ -540,64 +615,178 @@ export default function RoomLayoutEditor({
 
           {/* Right Sidebar */}
           <div
+            onDragOver={handleSidebarDragOver}
+            onDragLeave={handleSidebarDragLeave}
+            onDrop={handleSidebarDrop}
             style={{
               width: 280,
-              background: '#FFFFFF',
-              borderLeft: '1px solid #E2E8F0',
+              background: isDragOverSidebar ? '#EFF6FF' : '#FFFFFF',
+              borderLeft: isDragOverSidebar ? '2px dashed #2563EB' : '1px solid #E2E8F0',
               display: 'flex',
               flexDirection: 'column',
+              position: 'relative',
+              transition: 'background 0.2s ease, border-left 0.2s ease',
             }}
           >
+            {/* Drop-zone overlay hint for sidebar */}
+            {isDragOverSidebar && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(239, 246, 255, 0.92)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 50,
+                  pointerEvents: 'none',
+                  padding: '1rem',
+                  textAlign: 'center',
+                  border: '2px dashed #2563EB',
+                }}
+              >
+                <RotateCcw size={32} color="#2563EB" style={{ marginBottom: 8 }} />
+                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#1D4ED8' }}>
+                  วางตรงนี้เพื่อดึงออกจากผัง
+                </span>
+                <span style={{ fontSize: '0.75rem', color: '#3B82F6', marginTop: 4 }}>
+                  (ย้ายกลับสู่รายการที่ยังไม่ได้วาง)
+                </span>
+              </div>
+            )}
+
             {/* Palette header */}
             <div style={{ padding: '0.85rem 1rem', borderBottom: '1px solid #E2E8F0', background: '#F8FAFC' }}>
               <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <PlusCircle size={16} color="#2563EB" /> รายการที่ยังไม่ได้วาง ({unassignedDevices.length})
               </h3>
               <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: 2 }}>
-                ลากรายการออกไปยัง Canvas เพื่อวางตำแหน่ง
+                ลากเข้า-ออกจาก Canvas เพื่อจัดวางตำแหน่ง
               </div>
             </div>
 
-            {/* Unassigned list */}
-            <div style={{ flex: 1, padding: '0.75rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-              {unassignedDevices.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2rem 0' }}>
-                  <Trophy size={28} color="#059669" style={{ marginBottom: 8 }} />
-                  <div style={{ fontWeight: 700, color: '#059669', fontSize: '0.85rem' }}>จัดวางครบทุกเครื่องแล้ว!</div>
-                  <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 4 }}>กดบันทึกเพื่อบันทึกผัง</div>
-                </div>
-              ) : (
-                unassignedDevices.map((dev) => (
-                  <div
-                    key={dev.id}
-                    className="palette-item"
-                    draggable
-                    onDragStart={(e) => {
-                      setDraggedDeviceId(dev.id);
-                      e.dataTransfer.setData('text/plain', dev.id.toString());
-                    }}
+            {/* Unassigned list / Stack widget */}
+            <div style={{ flex: 1, padding: '0.85rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {/* Main Stack Card (รวมเป็นอันเดียว) */}
+              <div
+                draggable={unassignedDevices.length > 0}
+                onDragStart={(e) => {
+                  const nextDev = unassignedDevices[0];
+                  if (nextDev) {
+                    setDraggedDeviceId(nextDev.id);
+                    e.dataTransfer.setData('text/plain', nextDev.id.toString());
+                  }
+                }}
+                style={{
+                  padding: '1rem',
+                  background: unassignedDevices.length > 0
+                    ? 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)'
+                    : '#F8FAFC',
+                  border: unassignedDevices.length > 0 ? '2px solid #93C5FD' : '2px dashed #CBD5E1',
+                  borderRadius: '12px',
+                  boxShadow: unassignedDevices.length > 0 ? '0 4px 14px rgba(37,99,235,0.12)' : 'none',
+                  cursor: unassignedDevices.length > 0 ? 'grab' : 'not-allowed',
+                  userSelect: 'none',
+                  transition: 'all 0.2s ease',
+                  position: 'relative',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Monitor size={20} color={unassignedDevices.length > 0 ? '#2563EB' : '#94A3B8'} />
+                    <span style={{ fontSize: '0.92rem', fontWeight: 700, color: unassignedDevices.length > 0 ? '#1E3A8A' : '#64748B' }}>
+                      โต๊ะคอมพิวเตอร์
+                    </span>
+                  </div>
+                  <span
                     style={{
-                      padding: '0.5rem 0.75rem',
-                      background: '#F8FAFC',
-                      border: '1.5px solid #E2E8F0',
-                      borderRadius: '7px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'grab',
-                      fontSize: '0.82rem',
-                      fontWeight: 600,
-                      color: '#334155',
-                      transition: 'all 0.15s ease',
+                      fontSize: '0.78rem',
+                      fontWeight: 800,
+                      color: unassignedDevices.length > 0 ? '#FFFFFF' : '#64748B',
+                      background: unassignedDevices.length > 0 ? '#2563EB' : '#CBD5E1',
+                      padding: '0.2rem 0.65rem',
+                      borderRadius: '20px',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Monitor size={14} color="#64748B" />
-                      <span>{dev.name}</span>
+                    เหลือ {unassignedDevices.length} / {devices.length}
+                  </span>
+                </div>
+
+                {unassignedDevices.length > 0 ? (
+                  <>
+                    <div style={{ fontSize: '0.78rem', color: '#3B82F6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span>✨ ลากการ์ดนี้ไปวางบนผัง (ทีละ 1 เครื่อง)</span>
                     </div>
-                    <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>ลากเพื่อวาง</span>
+                    <div style={{ fontSize: '0.7rem', color: '#64748B', marginTop: 4, fontFamily: 'monospace' }}>
+                      เครื่องถัดไปที่จะวาง: {unassignedDevices[0]?.name}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: '0.78rem', color: '#059669', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                    <Trophy size={16} /> วางครบตามจำนวน {devices.length} เครื่องแล้ว!
                   </div>
-                ))
+                )}
+              </div>
+
+              {/* Optional Accordion for Detailed List */}
+              {unassignedDevices.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => setShowDetailedList((v) => !v)}
+                    style={{
+                      width: '100%',
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#64748B',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 4,
+                      padding: '0.35rem',
+                    }}
+                  >
+                    {showDetailedList ? '▲ ซ่อนรายชื่อเครื่องแบบแยก' : '▼ ดูรายชื่อเครื่องทั้งหมดแบบแยก'}
+                  </button>
+
+                  {showDetailedList && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.4rem', maxHeight: 220, overflowY: 'auto' }}>
+                      {unassignedDevices.map((dev) => (
+                        <div
+                          key={dev.id}
+                          className="palette-item"
+                          draggable
+                          onDragStart={(e) => {
+                            setDraggedDeviceId(dev.id);
+                            e.dataTransfer.setData('text/plain', dev.id.toString());
+                          }}
+                          style={{
+                            padding: '0.45rem 0.65rem',
+                            background: '#F8FAFC',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'grab',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            color: '#334155',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Monitor size={13} color="#64748B" />
+                            <span>{dev.name}</span>
+                          </div>
+                          <span style={{ fontSize: '0.65rem', color: '#94A3B8' }}>ลากเพื่อวาง</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 

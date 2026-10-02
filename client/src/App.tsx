@@ -5,6 +5,7 @@ import RoomView from './pages/RoomView';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminTickets from './pages/AdminTickets';
+import AdminRoomsPage from './pages/AdminRoomsPage';
 import AdminLayoutEditorPage from './pages/AdminLayoutEditorPage';
 import CoordHelper from './pages/CoordHelper';
 import MyReports from './pages/MyReports';
@@ -57,6 +58,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <AdminTickets />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/rooms"
+            element={
+              <ProtectedRoute>
+                <AdminRoomsPage />
               </ProtectedRoute>
             }
           />

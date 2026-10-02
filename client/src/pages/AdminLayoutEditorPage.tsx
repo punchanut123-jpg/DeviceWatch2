@@ -12,8 +12,13 @@ export default function AdminLayoutEditorPage() {
   const navigate = useNavigate();
 
   const [roomDetail, setRoomDetail] = useState<RoomDetail | null>(null);
+  const [allRooms, setAllRooms] = useState<Array<{ id: number; name: string; floor: { number: number } }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.buildings.allRooms().then(setAllRooms).catch(console.error);
+  }, []);
 
   useEffect(() => {
     if (!roomId || isNaN(roomId)) {
@@ -22,6 +27,7 @@ export default function AdminLayoutEditorPage() {
       return;
     }
 
+    setLoading(true);
     api.buildings
       .roomDetail(roomId)
       .then((data) => {
@@ -60,11 +66,11 @@ export default function AdminLayoutEditorPage() {
       <div className="admin-layout" style={{ padding: '2rem', textAlign: 'center' }}>
         <div className="alert alert-error">⚠️ {error || 'ไม่พบข้อมูลห้อง'}</div>
         <button
-          onClick={() => navigate('/admin')}
+          onClick={() => navigate('/admin/rooms')}
           className="btn btn-ghost"
           style={{ marginTop: '1rem' }}
         >
-          ← กลับหน้า Admin Dashboard
+          ← กลับหน้าเลือกห้องปฏิบัติการ
         </button>
       </div>
     );
@@ -72,10 +78,13 @@ export default function AdminLayoutEditorPage() {
 
   return (
     <RoomLayoutEditor
+      roomId={roomId}
       roomName={roomDetail.name}
       initialDevices={roomDetail.devices}
+      allRooms={allRooms}
+      onSelectRoom={(newRoomId) => navigate(`/admin/rooms/${newRoomId}/editor`)}
       onSave={handleSave}
-      onBack={() => navigate('/admin')}
+      onBack={() => navigate('/admin/rooms')}
     />
   );
 }

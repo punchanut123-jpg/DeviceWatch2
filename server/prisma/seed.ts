@@ -93,8 +93,8 @@ function makeDevices(count: number, withPositions = false) {
   const positions = withPositions ? generatePositions(count) : [];
   return Array.from({ length: count }, (_, i) => ({
     name: `PC-${String(i + 1).padStart(2, '0')}`,
-    posX: withPositions ? positions[i].posX : 0,
-    posY: withPositions ? positions[i].posY : 0,
+    posX: withPositions ? positions[i].posX : null,
+    posY: withPositions ? positions[i].posY : null,
     status: 'normal',
   }));
 }

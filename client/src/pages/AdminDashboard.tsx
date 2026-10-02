@@ -1,33 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, Clock3, Monitor, Ticket, User, Wrench, XCircle } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import type { AdminStats, Ticket as TicketType } from '../types';
 import AdminLayout from '../components/AdminLayout';
+import StatCard from '../components/StatCard';
 
 const STATUS_LABEL: Record<string, string> = {
   open: 'รอซ่อม',
   in_progress: 'กำลังซ่อม',
   resolved: 'ซ่อมเสร็จ',
 };
-
-type StatTone = 'default' | 'success' | 'danger' | 'warning';
-
-function StatCard({
-  label, value, tone = 'default', icon: Icon,
-}: { label: string; value: number; tone?: StatTone; icon: LucideIcon }) {
-  return (
-    <div className={`stat-card stat-card-tone-${tone}`}>
-      <div className="stat-card-icon">
-        <Icon size={20} />
-      </div>
-      <div className="stat-value">{value}</div>
-      <div className="stat-label">{label}</div>
-    </div>
-  );
-}
 
 function TicketRow({ ticket }: { ticket: TicketType }) {
   const reporter = ticket.student || ticket.reportedBy;

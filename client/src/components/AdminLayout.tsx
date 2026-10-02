@@ -3,7 +3,7 @@ import { House, LayoutDashboard, LogOut, PencilRuler, Ticket } from 'lucide-reac
 import type { ReactNode } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-type NavKey = 'dashboard' | 'tickets';
+type NavKey = 'dashboard' | 'tickets' | 'rooms';
 
 interface AdminLayoutProps {
   active: NavKey;
@@ -14,6 +14,7 @@ interface AdminLayoutProps {
 
 const NAV_ITEMS: { key: NavKey; to: string; label: string; icon: typeof House }[] = [
   { key: 'dashboard', to: '/admin', label: 'ภาพรวม', icon: LayoutDashboard },
+  { key: 'rooms', to: '/admin/rooms', label: 'จัดผังห้อง', icon: PencilRuler },
   { key: 'tickets', to: '/admin/tickets', label: 'จัดการ Ticket', icon: Ticket },
 ];
 
@@ -44,10 +45,6 @@ export default function AdminLayout({ active, title, actions, children }: AdminL
             {item.label}
           </Link>
         ))}
-        <Link to="/admin/rooms/37/editor" className="admin-nav-item">
-          <PencilRuler size={17} className="admin-nav-icon" />
-          จัดผังห้อง
-        </Link>
         <Link to="/" className="admin-nav-item">
           <House size={17} className="admin-nav-icon" />
           หน้าแจ้งซ่อม

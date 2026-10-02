@@ -33,6 +33,13 @@ export const api = {
       request<import('../types').Floor[]>(`/buildings/${buildingId}/floors`),
     rooms: (floorId: number) =>
       request<import('../types').Room[]>(`/buildings/floors/${floorId}/rooms`),
+    allRooms: () =>
+      request<Array<{
+        id: number;
+        name: string;
+        floor: { number: number; building: { name: string } };
+        _count: { devices: number };
+      }>>('/buildings/all-rooms'),
     roomDetail: (roomId: number) =>
       request<import('../types').RoomDetail>(`/buildings/rooms/${roomId}`),
   },

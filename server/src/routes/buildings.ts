@@ -18,6 +18,30 @@ router.get('/', async (_req, res) => {
   }
 });
 
+// GET /api/buildings/all-rooms
+router.get('/all-rooms', async (_req, res) => {
+  try {
+    const rooms = await prisma.room.findMany({
+      select: {
+        id: true,
+        name: true,
+        floor: {
+          select: {
+            number: true,
+            building: { select: { name: true } },
+          },
+        },
+        _count: { select: { devices: true } },
+      },
+      orderBy: [{ floor: { number: 'asc' } }, { name: 'asc' }],
+    });
+    res.json(rooms);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด' });
+  }
+});
+
 // GET /api/buildings/:id/floors
 router.get('/:id/floors', async (req, res) => {
   try {
