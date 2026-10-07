@@ -38,7 +38,7 @@ export const api = {
         id: number;
         name: string;
         floor: { number: number; building: { name: string } };
-        _count: { devices: number };
+        _count: { devices: number; desks: number };
       }>>('/buildings/all-rooms'),
     roomDetail: (roomId: number) =>
       request<import('../types').RoomDetail>(`/buildings/rooms/${roomId}`),
@@ -119,10 +119,21 @@ export const api = {
         method: 'PATCH',
         headers: authHeaders(token),
       }),
-    updateRoomLayout: (token: string, roomId: number, devices: Array<{ id: number; posX: number | null; posY: number | null }>) =>
-      request<{ success: boolean; updatedCount: number }>(`/admin/rooms/${roomId}/layout`, {
+    updateRoomLayout: (token: string, roomId: number, payload: import('../types').LayoutSavePayload) =>
+      request<import('../types').LayoutSaveResult>(`/admin/rooms/${roomId}/layout`, {
         method: 'PATCH',
-        body: JSON.stringify({ devices }),
+        body: JSON.stringify(payload),
+        headers: authHeaders(token),
+      }),
+    applyRoomLayout: (
+      token: string,
+      roomId: number,
+      sourceRoomId: number,
+      confirm: boolean
+    ) =>
+      request<import('../types').ApplyLayoutResult>(`/admin/rooms/${roomId}/apply-layout`, {
+        method: 'POST',
+        body: JSON.stringify({ sourceRoomId, confirm }),
         headers: authHeaders(token),
       }),
   },

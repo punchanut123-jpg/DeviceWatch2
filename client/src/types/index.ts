@@ -25,7 +25,7 @@ export interface Floor {
 export interface Room {
   id: number;
   name: string;
-  _count?: { devices: number };
+  _count?: { devices?: number; desks?: number };
 }
 
 export interface Device {
@@ -43,6 +43,22 @@ export interface Device {
   };
 }
 
+/** เครื่องที่อยู่ในโต๊ะ (ฝั่ง RoomDetail) */
+export interface DeskDevice {
+  id: number;
+  name: string;
+  status: DeviceStatus;
+}
+
+/** โต๊ะในผังห้อง — x/y = null หมายถึงยังไม่ได้วาง (แสดงด้วยกริดคำนวณตอน render) */
+export interface Desk {
+  id: number;
+  label: string;
+  x: number | null;
+  y: number | null;
+  devices: DeskDevice[];
+}
+
 export interface RoomDetail {
   id: number;
   name: string;
@@ -52,6 +68,7 @@ export interface RoomDetail {
     building: { id: number; name: string };
   };
   devices: Device[];
+  desks: Desk[];
 }
 
 export interface Ticket {
@@ -94,4 +111,38 @@ export interface AdminStats {
     resolved: number;
   };
   recentTickets: Ticket[];
+}
+
+/** payload บันทึกผังห้อง (PATCH /admin/rooms/:id/layout) */
+export interface LayoutSavePayload {
+  desks: Array<{ id?: number; label: string; x: number | null; y: number | null }>;
+  deleteIds?: number[];
+  assignments?: Array<{ deviceId: number; deskIndex: number | null }>;
+}
+
+export interface LayoutSaveResult {
+  success: boolean;
+  deskCount: number;
+  poolCount: number;
+  summary: string;
+}
+
+/** ตัวเลขที่ preview ก่อนยืนยันคัดลอกผัง */
+export interface ApplyLayoutPreview {
+  sourceRoomId: number;
+  sourceRoomName: string;
+  targetRoomName: string;
+  existingDesks: number;
+  desksToCreate: number;
+  sourceDeskCount: number;
+  matchedByName: number;
+  assignedByOrder: number;
+  toPool: number;
+  totalDevices: number;
+}
+
+export interface ApplyLayoutResult {
+  preview: ApplyLayoutPreview;
+  success?: boolean;
+  summary?: string;
 }

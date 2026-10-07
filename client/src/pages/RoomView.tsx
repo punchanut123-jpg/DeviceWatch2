@@ -145,10 +145,9 @@ function ReportModal({
   };
 
   const locationLabel = `ห้อง ${room.name} · ชั้น ${room.floor.number} · ${room.floor.building.name}`;
-  const coordLabel =
-    device.posX !== null && device.posY !== null
-      ? `พิกัด: ${device.posX}%, ${device.posY}%`
-      : null;
+  const deskLabel =
+    room.desks.find((d) => d.devices.some((dev) => dev.id === device.id))?.label ?? null;
+  const coordLabel = deskLabel ? `โต๊ะ: ${deskLabel}` : 'ยังไม่มีโต๊ะ';
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -371,6 +370,10 @@ export default function RoomView() {
                     <span>จำนวนเครื่อง:</span>
                     <strong>{room.devices.length} เครื่อง</strong>
                   </div>
+                  <div className="room-sidebar-item">
+                    <span>จำนวนโต๊ะ:</span>
+                    <strong>{room.desks.length} โต๊ะ</strong>
+                  </div>
                 </div>
 
                 <div className="room-sidebar-card">
@@ -442,6 +445,7 @@ export default function RoomView() {
 
                 <RoomLayout2D
                   devices={room.devices}
+                  desks={room.desks}
                   roomName={room.name}
                   onDeviceClick={handleDeviceClick}
                   selectedDeviceId={reportingDevice?.id}

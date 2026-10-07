@@ -145,7 +145,7 @@ export default function Dashboard() {
               {step === 'room' && rooms.map((room) => (
                 <button key={room.id} className="dashboard-choice-card" onClick={() => navigate(`/room/${room.id}`)}>
                   <span className="dashboard-choice-icon"><Monitor size={26} /></span>
-                  <span className="dashboard-choice-content"><strong>ห้อง {room.name}</strong><small>{room._count?.devices ?? 0} เครื่องพร้อมตรวจสอบสถานะ</small></span>
+                  <span className="dashboard-choice-content"><strong>ห้อง {room.name}</strong><small>{room._count?.devices ?? 0} เครื่อง · {room._count?.desks ?? 0} โต๊ะในผัง</small></span>
                   <ChevronRight className="dashboard-choice-arrow" size={20} />
                 </button>
               ))}

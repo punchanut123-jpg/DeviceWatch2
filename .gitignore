@@ -34,6 +34,8 @@ Thumbs.db
 # Database & temporary backups
 *.sql
 !server/prisma/seed.ts
+!server/prisma/migrations/**/*.sql
+!server/scripts/**/*.sql
 
 # Coverage
 coverage/

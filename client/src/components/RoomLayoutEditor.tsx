@@ -1,820 +1,811 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import type { Device } from '../types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  ApplyLayoutPreview,
+  ApplyLayoutResult,
+  Desk,
+  Device,
+  LayoutSavePayload,
+  LayoutSaveResult,
+} from '../types';
+import { gridPositions, nextDeskNumber } from '../utils/deskLayout';
 import {
-  Save,
-  RotateCcw,
-  Monitor,
-  CheckCircle2,
   AlertTriangle,
-  Wrench,
   ArrowLeft,
+  CheckCircle2,
+  Copy,
+  Monitor,
   Move,
-  Trash2,
   PlusCircle,
-  HelpCircle,
-  Trophy,
-  Zap,
+  RotateCcw,
+  Save,
+  Trash2,
+  Wand2,
+  X,
 } from 'lucide-react';
+
+/** สถานะโต๊ะระหว่างแก้ไข (id ไม่มี = โต๊ะที่เพิ่งสร้าง ยังไม่ได้บันทึก) */
+interface EditorDesk {
+  key: string;
+  id?: number;
+  label: string;
+  x: number | null;
+  y: number | null;
+  deviceIds: number[];
+}
 
 interface RoomLayoutEditorProps {
   roomId?: number;
   roomName: string;
+  initialDesks: Desk[];
   initialDevices: Device[];
   allRooms?: Array<{ id: number; name: string; floor: { number: number } }>;
   onSelectRoom?: (roomId: number) => void;
-  onSave: (devices: Array<{ id: number; posX: number | null; posY: number | null }>) => Promise<void>;
+  onSave: (payload: LayoutSavePayload) => Promise<LayoutSaveResult>;
+  onApplyLayout: (sourceRoomId: number, confirm: boolean) => Promise<ApplyLayoutResult>;
   onBack?: () => void;
 }
 
-// Drop particle effect: small burst rings when device is dropped
-function DropRipple({ x, y, onDone }: { x: number; y: number; onDone: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 700);
-    return () => clearTimeout(t);
-  }, [onDone]);
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: `${x}%`,
-        top: `${y}%`,
-        transform: 'translate(-50%, -50%)',
-        pointerEvents: 'none',
-        zIndex: 99,
-      }}
-    >
-      {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: 10 + i * 14,
-            height: 10 + i * 14,
-            border: '2px solid rgba(37,99,235,' + (0.7 - i * 0.2) + ')',
-            borderRadius: '50%',
-            animation: `dropRipple ${0.5 + i * 0.1}s ease-out forwards`,
-            animationDelay: `${i * 0.06}s`,
-          }}
-        />
-      ))}
-    </div>
-  );
+type DragState =
+  | { type: 'desk'; key: string }
+  | { type: 'device'; deviceId: number };
+
+const CLAMP_MIN = 3;
+const CLAMP_MAX = 95;
+
+function toEditorDesks(list: Desk[]): EditorDesk[] {
+  return list.map((d) => ({
+    key: `d-${d.id}`,
+    id: d.id,
+    label: d.label,
+    x: d.x,
+    y: d.y,
+    deviceIds: d.devices.map((dev) => dev.id),
+  }));
+}
+
+function buildPayload(
+  desks: EditorDesk[],
+  deletedIds: number[],
+  allDevices: Device[]
+): LayoutSavePayload {
+  const assigned = new Set(desks.flatMap((d) => d.deviceIds));
+  const pool = allDevices.filter((dev) => !assigned.has(dev.id));
+  return {
+    desks: desks.map((d) =>
+      d.id !== undefined
+        ? { id: d.id, label: d.label, x: d.x, y: d.y }
+        : { label: d.label, x: d.x, y: d.y }
+    ),
+    deleteIds: deletedIds,
+    assignments: [
+      ...desks.flatMap((d, idx) =>
+        d.deviceIds.map((deviceId) => ({ deviceId, deskIndex: idx }))
+      ),
+      ...pool.map((dev) => ({ deviceId: dev.id, deskIndex: null })),
+    ],
+  };
+}
+
+function errText(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
 }
 
 export default function RoomLayoutEditor({
   roomId,
   roomName,
+  initialDesks,
   initialDevices,
   allRooms,
   onSelectRoom,
   onSave,
+  onApplyLayout,
   onBack,
 }: RoomLayoutEditorProps) {
-  const [devices, setDevices] = useState<Device[]>(initialDevices);
-  const [lastSavedDevices, setLastSavedDevices] = useState<Device[]>(initialDevices);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
+  const [desks, setDesks] = useState<EditorDesk[]>(() => toEditorDesks(initialDesks));
+  const [deletedIds, setDeletedIds] = useState<number[]>([]);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-  const [draggedDeviceId, setDraggedDeviceId] = useState<number | null>(null);
-  const [isDragOverCanvas, setIsDragOverCanvas] = useState(false);
-  const [isDragOverSidebar, setIsDragOverSidebar] = useState(false);
-  // Gamification state
-  const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
-  const [lastDroppedId, setLastDroppedId] = useState<number | null>(null);
-  const [showCelebration, setShowCelebration] = useState(false);
-  const [showDetailedList, setShowDetailedList] = useState(false);
-  const rippleCounter = useRef(0);
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const [dragOverCanvas, setDragOverCanvas] = useState(false);
+  const [dragOverPalette, setDragOverPalette] = useState(false);
+  const [deskTargetKey, setDeskTargetKey] = useState<string | null>(null);
+
+  const [showApply, setShowApply] = useState(false);
+  const [sourceId, setSourceId] = useState<number | ''>('');
+  const [preview, setPreview] = useState<ApplyLayoutPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [applyErr, setApplyErr] = useState('');
+  const [applyBusy, setApplyBusy] = useState(false);
+
+  const dragRef = useRef<DragState | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const tempCounter = useRef(0);
 
+  // โหลดข้อมูลใหม่จาก server (หลังบันทึก/คัดลอก หน้าหลักจะ refetch แล้วส่ง props ใหม่มา)
   useEffect(() => {
-    setDevices(initialDevices);
-    setLastSavedDevices(initialDevices);
-  }, [initialDevices]);
+    setDesks(toEditorDesks(initialDesks));
+    setDeletedIds([]);
+    setSelectedKey(null);
+  }, [initialDesks]);
 
-  const assignedDevices = devices.filter((d) => d.posX !== null && d.posY !== null);
-  const unassignedDevices = devices.filter((d) => d.posX === null || d.posY === null);
+  const deviceById = useMemo(
+    () => new Map(initialDevices.map((d) => [d.id, d])),
+    [initialDevices]
+  );
+  const assignedIds = useMemo(
+    () => new Set(desks.flatMap((d) => d.deviceIds)),
+    [desks]
+  );
+  const pool = useMemo(
+    () => initialDevices.filter((d) => !assignedIds.has(d.id)),
+    [initialDevices, assignedIds]
+  );
+  const unplaced = desks.filter((d) => d.x === null);
+  const placed = desks.filter((d) => d.x !== null);
+  const selected = desks.find((d) => d.key === selectedKey) ?? null;
 
-  const progressPct = devices.length > 0 ? Math.round((assignedDevices.length / devices.length) * 100) : 0;
-  const progressColor =
-    progressPct === 100 ? '#16A34A' : progressPct >= 60 ? '#D97706' : '#2563EB';
+  const initialJson = useMemo(
+    () => JSON.stringify(buildPayload(toEditorDesks(initialDesks), [], initialDevices)),
+    [initialDesks, initialDevices]
+  );
+  const currentJson = useMemo(
+    () => JSON.stringify(buildPayload(desks, deletedIds, initialDevices)),
+    [desks, deletedIds, initialDevices]
+  );
+  const dirty = initialJson !== currentJson;
 
-  // Check for 100% completion
+  // ── ดึงข้อมูลตัวอย่างก่อนยืนยันคัดลอกผัง ──
   useEffect(() => {
-    if (progressPct === 100 && devices.length > 0) {
-      setShowCelebration(true);
-      const t = setTimeout(() => setShowCelebration(false), 4000);
-      return () => clearTimeout(t);
+    if (!showApply || sourceId === '') {
+      setPreview(null);
+      return;
     }
-  }, [progressPct, devices.length]);
+    let cancelled = false;
+    setPreview(null);
+    setPreviewLoading(true);
+    setApplyErr('');
+    onApplyLayout(Number(sourceId), false)
+      .then((res) => {
+        if (!cancelled) setPreview(res.preview);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setApplyErr(errText(err, 'โหลดตัวอย่างไม่สำเร็จ'));
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showApply, sourceId, onApplyLayout]);
 
-  const addRipple = useCallback((x: number, y: number) => {
-    const id = ++rippleCounter.current;
-    setRipples((prev) => [...prev, { id, x, y }]);
+  // ── Drag & Drop ──────────────────────────────────────────
+  const startDeskDrag = useCallback((e: React.DragEvent, key: string) => {
+    dragRef.current = { type: 'desk', key };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', key);
   }, []);
 
-  const removeRipple = useCallback((id: number) => {
-    setRipples((prev) => prev.filter((r) => r.id !== id));
+  const startDeviceDrag = useCallback((e: React.DragEvent, deviceId: number) => {
+    e.stopPropagation();
+    dragRef.current = { type: 'device', deviceId };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(deviceId));
   }, []);
 
-  const handleCanvasDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleCanvasDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    setIsDragOverCanvas(true);
+    setDragOverCanvas(true);
   };
 
-  const handleCanvasDragLeave = () => setIsDragOverCanvas(false);
-
-  const handleCanvasDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleCanvasDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragOverCanvas(false);
-    if (!canvasRef.current || draggedDeviceId === null) return;
+    setDragOverCanvas(false);
+    const drag = dragRef.current;
+    if (!drag || drag.type !== 'desk' || !canvasRef.current) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const rawX = ((e.clientX - rect.left) / rect.width) * 100;
     const rawY = ((e.clientY - rect.top) / rect.height) * 100;
-    const clampedX = Math.round(Math.min(95, Math.max(3, rawX)) * 10) / 10;
-    const clampedY = Math.round(Math.min(95, Math.max(3, rawY)) * 10) / 10;
+    const x = Math.round(Math.min(CLAMP_MAX, Math.max(CLAMP_MIN, rawX)) * 10) / 10;
+    const y = Math.round(Math.min(CLAMP_MAX, Math.max(CLAMP_MIN, rawY)) * 10) / 10;
 
-    setDevices((prev) =>
-      prev.map((dev) =>
-        dev.id === draggedDeviceId ? { ...dev, posX: clampedX, posY: clampedY } : dev
-      )
-    );
-    setSelectedDeviceId(draggedDeviceId);
-    setLastDroppedId(draggedDeviceId);
-    addRipple(clampedX, clampedY);
-    setTimeout(() => setLastDroppedId(null), 600);
-    setDraggedDeviceId(null);
+    setDesks((prev) => prev.map((d) => (d.key === drag.key ? { ...d, x, y } : d)));
+    setSelectedKey(drag.key);
+    dragRef.current = null;
   };
 
-  const handleSidebarDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+  const handlePaletteDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    setIsDragOverSidebar(true);
+    setDragOverPalette(true);
   };
 
-  const handleSidebarDragLeave = () => setIsDragOverSidebar(false);
-
-  const handleSidebarDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  const handlePaletteDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragOverSidebar(false);
-    if (draggedDeviceId === null) return;
+    setDragOverPalette(false);
+    const drag = dragRef.current;
+    if (!drag) return;
 
-    handleUnassignDevice(draggedDeviceId);
-    setDraggedDeviceId(null);
+    if (drag.type === 'desk') {
+      setDesks((prev) =>
+        prev.map((d) => (d.key === drag.key ? { ...d, x: null, y: null } : d))
+      );
+      setSelectedKey(drag.key);
+    } else {
+      // ดึงเครื่องออกจากโต๊ะ → กลับเป็น "ยังไม่มีโต๊ะ"
+      setDesks((prev) =>
+        prev.map((d) =>
+          d.deviceIds.includes(drag.deviceId)
+            ? { ...d, deviceIds: d.deviceIds.filter((id) => id !== drag.deviceId) }
+            : d
+        )
+      );
+    }
+    dragRef.current = null;
   };
 
-  const handleUnassignDevice = (id: number) => {
-    setDevices((prev) =>
-      prev.map((dev) => (dev.id === id ? { ...dev, posX: null, posY: null } : dev))
+  const handleDeskDragOver = (e: React.DragEvent, key: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragRef.current?.type === 'device') setDeskTargetKey(key);
+  };
+
+  const handleDeskDrop = (e: React.DragEvent, key: string) => {
+    const drag = dragRef.current;
+    // ถ้าเป็นการลาก "โต๊ะ" ให้ event เด้งขึ้น canvas ไปจัดการวางพิกัดต่อ
+    if (!drag || drag.type !== 'device') return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    setDeskTargetKey(null);
+
+    setDesks((prev) =>
+      prev.map((d) => {
+        const without = d.deviceIds.filter((id) => id !== drag.deviceId);
+        if (d.key === key) return { ...d, deviceIds: [...without, drag.deviceId] };
+        return d.deviceIds.includes(drag.deviceId) ? { ...d, deviceIds: without } : d;
+      })
     );
-    if (selectedDeviceId === id) setSelectedDeviceId(null);
+    setSelectedKey(key);
+    dragRef.current = null;
+  };
+
+  const handleDragEnd = () => {
+    dragRef.current = null;
+    setDragOverCanvas(false);
+    setDragOverPalette(false);
+    setDeskTargetKey(null);
+  };
+
+  // ── การแก้ไข ─────────────────────────────────────────────
+  const handleAddDesk = () => {
+    const label = `โต๊ะ ${String(nextDeskNumber(desks.map((d) => d.label))).padStart(2, '0')}`;
+    const key = `t-${++tempCounter.current}`;
+    setDesks((prev) => [...prev, { key, label, x: null, y: null, deviceIds: [] }]);
+    setSelectedKey(key);
+    setMsg(null);
+  };
+
+  const handleAutoArrange = () => {
+    if (unplaced.length === 0) return;
+    const positions = gridPositions(unplaced.length);
+    let i = 0;
+    setDesks((prev) =>
+      prev.map((d) => {
+        if (d.x !== null) return d;
+        const p = positions[i++];
+        return { ...d, x: p.x, y: p.y };
+      })
+    );
+    setMsg({
+      type: 'success',
+      text: `เรียงโต๊ะที่ยังไม่วาง ${unplaced.length} ตัวแล้ว — ตรวจผังก่อนกดบันทึก`,
+    });
+  };
+
+  const handleDeleteDesk = (desk: EditorDesk) => {
+    const deviceCount = desk.deviceIds.length;
+    const question =
+      deviceCount > 0
+        ? `ลบ ${desk.label}? เครื่อง ${deviceCount} ตัวจะกลายเป็น "ยังไม่มีโต๊ะ"`
+        : `ลบ ${desk.label}?`;
+    if (!window.confirm(question)) return;
+
+    setDesks((prev) => prev.filter((d) => d.key !== desk.key));
+    if (desk.id !== undefined) setDeletedIds((prev) => [...prev, desk.id!]);
+    if (selectedKey === desk.key) setSelectedKey(null);
+  };
+
+  const handleLabelChange = (key: string, label: string) => {
+    setDesks((prev) => prev.map((d) => (d.key === key ? { ...d, label } : d)));
+  };
+
+  const handleUnassignDevice = (deviceId: number) => {
+    setDesks((prev) =>
+      prev.map((d) =>
+        d.deviceIds.includes(deviceId)
+          ? { ...d, deviceIds: d.deviceIds.filter((id) => id !== deviceId) }
+          : d
+      )
+    );
   };
 
   const handleReset = () => {
-    setDevices(lastSavedDevices);
-    setSelectedDeviceId(null);
-    setSaveMessage(null);
-    setShowCelebration(false);
+    setDesks(toEditorDesks(initialDesks));
+    setDeletedIds([]);
+    setSelectedKey(null);
+    setMsg(null);
   };
 
-  const handleClearAll = () => {
-    setDevices((prev) => prev.map((dev) => ({ ...dev, posX: null, posY: null })));
-    setSelectedDeviceId(null);
-    setSaveMessage(null);
-    setShowCelebration(false);
-  };
+  const handleSave = async () => {
+    const labels = desks.map((d) => d.label.trim());
+    if (labels.some((l) => l.length === 0)) {
+      setMsg({ type: 'error', text: 'ชื่อโต๊ะต้องไม่ว่าง' });
+      return;
+    }
+    if (new Set(labels).size !== labels.length) {
+      setMsg({ type: 'error', text: 'มีชื่อโต๊ะซ้ำกัน — เปลี่ยนชื่อก่อนบันทึก' });
+      return;
+    }
 
-  const handleSaveClick = async () => {
     setIsSaving(true);
-    setSaveMessage(null);
+    setMsg(null);
     try {
-      const payload = devices.map((d) => ({ id: d.id, posX: d.posX, posY: d.posY }));
-      await onSave(payload);
-      setLastSavedDevices(devices);
-      setSaveMessage({ text: '✅ บันทึกตำแหน่งผังห้องสำเร็จแล้ว!', type: 'success' });
-      setTimeout(() => setSaveMessage(null), 3000);
-    } catch (err: any) {
-      setSaveMessage({ text: `❌ เกิดข้อผิดพลาด: ${err.message || 'บันทึกไม่สำเร็จ'}`, type: 'error' });
+      const payload = buildPayload(
+        desks.map((d) => ({ ...d, label: d.label.trim() })),
+        deletedIds,
+        initialDevices
+      );
+      const res = await onSave(payload);
+      setMsg({ type: 'success', text: `บันทึกผังห้องแล้ว — ${res.summary}` });
+    } catch (err: unknown) {
+      setMsg({ type: 'error', text: errText(err, 'บันทึกไม่สำเร็จ') });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const selectedDevice = devices.find((d) => d.id === selectedDeviceId);
+  const handleConfirmApply = async () => {
+    if (sourceId === '') return;
+    setApplyBusy(true);
+    setApplyErr('');
+    try {
+      const res = await onApplyLayout(Number(sourceId), true);
+      setShowApply(false);
+      setSourceId('');
+      setPreview(null);
+      setMsg({
+        type: 'success',
+        text: `คัดลอกผังจากห้อง ${res.preview.sourceRoomName} แล้ว — ${res.summary ?? ''}`,
+      });
+    } catch (err: unknown) {
+      setApplyErr(errText(err, 'คัดลอกผังไม่สำเร็จ'));
+    } finally {
+      setApplyBusy(false);
+    }
+  };
+
+  const sourceOptions = (allRooms ?? []).filter((r) => r.id !== roomId);
 
   return (
-    <>
-      {/* CSS Keyframes injected into DOM once */}
-      <style>{`
-        @keyframes dropRipple {
-          0%   { opacity: 1; transform: translate(-50%,-50%) scale(0.2); }
-          100% { opacity: 0; transform: translate(-50%,-50%) scale(2.4); }
-        }
-        @keyframes dropBounce {
-          0%   { transform: translate(-50%,-50%) scale(1.35); }
-          40%  { transform: translate(-50%,-50%) scale(0.88); }
-          70%  { transform: translate(-50%,-50%) scale(1.08); }
-          100% { transform: translate(-50%,-50%) scale(1); }
-        }
-        @keyframes celebrationSlide {
-          0%   { opacity: 0; transform: translateY(-24px) scale(0.9); }
-          15%  { opacity: 1; transform: translateY(0) scale(1); }
-          80%  { opacity: 1; }
-          100% { opacity: 0; transform: translateY(-12px); }
-        }
-        @keyframes progressShine {
-          0%   { background-position: -200% center; }
-          100% { background-position: 200% center; }
-        }
-        @keyframes paletteHover {
-          0%   { box-shadow: 0 2px 6px rgba(37,99,235,0.15); }
-          100% { box-shadow: 0 4px 14px rgba(37,99,235,0.35); }
-        }
-        .palette-item:hover {
-          background: #EFF6FF !important;
-          border-color: #93C5FD !important;
-          transform: translateX(-2px);
-          transition: all 0.15s ease;
-        }
-        .canvas-device:hover {
-          transform: translate(-50%,-50%) scale(1.06);
-          transition: transform 0.15s ease, box-shadow 0.15s ease;
-        }
-      `}</style>
-
-      <div className="rleditor-wrapper" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 'calc(100vh - 80px)' }}>
-        {/* Celebration Banner */}
-        {showCelebration && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 80,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 1000,
-              background: '#16A34A',
-              color: '#FFFFFF',
-              padding: '0.9rem 2.5rem',
-              borderRadius: '50px',
-              fontWeight: 800,
-              fontSize: '1.05rem',
-              boxShadow: '0 8px 30px rgba(5,150,105,0.45)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              animation: 'celebrationSlide 4s ease forwards',
-              pointerEvents: 'none',
-            }}
-          >
-            <Trophy size={22} />
-            🎉 จัดวางครบทุกเครื่องแล้ว! กดบันทึกเพื่อบันทึกผัง
-          </div>
-        )}
-
-        {/* Header Bar */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0.85rem 1.25rem',
-            background: '#FFFFFF',
-            borderBottom: '1px solid #E2E8F0',
-            gap: '1rem',
-            flexWrap: 'wrap',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {onBack && (
-              <button
-                onClick={onBack}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  padding: '0.4rem 0.75rem', fontSize: '0.85rem', fontWeight: 600,
-                  color: '#475569', background: '#F1F5F9', border: '1px solid #CBD5E1',
-                  borderRadius: '8px', cursor: 'pointer',
-                }}
-              >
-                <ArrowLeft size={16} /> ย้อนกลับ
-              </button>
-            )}
-            <div>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 8 }}>
-                🗺️ จัดตำแหน่งผังห้อง{' '}
-                {allRooms && allRooms.length > 0 && onSelectRoom ? (
-                  <select
-                    value={roomId}
-                    onChange={(e) => onSelectRoom(Number(e.target.value))}
-                    style={{
-                      fontSize: '1.05rem',
-                      fontWeight: 800,
-                      color: '#2563EB',
-                      background: '#EFF6FF',
-                      border: '1.5px solid #93C5FD',
-                      borderRadius: '8px',
-                      padding: '0.2rem 0.65rem',
-                      cursor: 'pointer',
-                      outline: 'none',
-                    }}
-                  >
-                    {allRooms.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        ห้อง {r.name} (ชั้น {r.floor.number})
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span style={{ color: '#2563EB' }}>{roomName}</span>
-                )}
-              </h2>
-              <div style={{ fontSize: '0.78rem', color: '#64748B', marginTop: 2 }}>
-                ลากการ์ดอุปกรณ์มาวางบนผังห้อง และกดบันทึกพิกัดจริง
-              </div>
+    <div className="rle-root" onDragEnd={handleDragEnd}>
+      {/* ── Header ── */}
+      <div className="rle-hdr">
+        <div className="rle-hdr-left">
+          {onBack && (
+            <button className="btn btn-ghost btn-sm" onClick={onBack}>
+              <ArrowLeft size={15} /> ย้อนกลับ
+            </button>
+          )}
+          <div>
+            <h2 className="rle-title">
+              จัดผังห้อง{' '}
+              {allRooms && allRooms.length > 0 && onSelectRoom ? (
+                <select
+                  className="rle-room-select"
+                  value={roomId}
+                  onChange={(e) => onSelectRoom(Number(e.target.value))}
+                >
+                  {allRooms.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      ห้อง {r.name} (ชั้น {r.floor.number})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="rle-room-name">{roomName}</span>
+              )}
+              {dirty && <span className="rle-dirty">มีการแก้ไขยังไม่ได้บันทึก</span>}
+            </h2>
+            <div className="rle-sub">
+              ลากโต๊ะไปวางบนผัง ลากเครื่องเข้า/ออกจากโต๊ะ แล้วกดบันทึก
             </div>
-          </div>
-
-          {/* Action Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            {saveMessage && (
-              <span
-                style={{
-                  fontSize: '0.82rem', fontWeight: 600,
-                  color: saveMessage.type === 'success' ? '#166534' : '#991B1B',
-                  background: saveMessage.type === 'success' ? '#DCFCE7' : '#FEE2E2',
-                  padding: '0.4rem 0.75rem', borderRadius: '6px',
-                  border: `1px solid ${saveMessage.type === 'success' ? '#86EFAC' : '#FCA5A5'}`,
-                }}
-              >
-                {saveMessage.text}
-              </span>
-            )}
-            <button
-              onClick={handleClearAll}
-              disabled={isSaving}
-              title="ดึงอุปกรณ์ทั้งหมดออกจากผังห้องเป็นห้องว่าง"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '0.5rem 0.9rem', fontSize: '0.85rem', fontWeight: 600,
-                color: '#DC2626', background: '#FEF2F2', border: '1px solid #FCA5A5',
-                borderRadius: '8px', cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <Trash2 size={15} /> ล้างผังห้อง (เป็นห้องว่าง)
-            </button>
-            <button
-              onClick={handleReset}
-              disabled={isSaving}
-              title="รีเซ็ตกลับสู่ค่าเดิมที่บันทึกไว้ล่าสุด"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '0.5rem 0.9rem', fontSize: '0.85rem', fontWeight: 600,
-                color: '#475569', background: '#FFFFFF', border: '1px solid #CBD5E1',
-                borderRadius: '8px', cursor: 'pointer',
-              }}
-            >
-              <RotateCcw size={15} /> รีเซ็ตค่าบันทึกเดิม
-            </button>
-            <button
-              onClick={handleSaveClick}
-              disabled={isSaving}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '0.5rem 1.25rem', fontSize: '0.88rem', fontWeight: 700,
-                color: '#FFFFFF',
-                background: progressPct === 100 ? '#16A34A' : '#2563EB',
-                border: 'none', borderRadius: '8px',
-                cursor: isSaving ? 'wait' : 'pointer',
-                boxShadow: progressPct === 100
-                  ? '0 2px 12px rgba(5,150,105,0.4)'
-                  : '0 2px 6px rgba(37,99,235,0.25)',
-                opacity: isSaving ? 0.7 : 1,
-                transition: 'background 0.4s ease, box-shadow 0.3s ease',
-              }}
-            >
-              {progressPct === 100 ? <Trophy size={16} /> : <Save size={16} />}
-              {isSaving ? 'กำลังบันทึก...' : 'บันทึกผังห้อง'}
-            </button>
           </div>
         </div>
 
-        {/* ── Progress Bar ─────────────────────────────────────────── */}
-        <div
-          style={{
-            padding: '0.6rem 1.25rem',
-            background: '#F8FAFC',
-            borderBottom: '1px solid #E2E8F0',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-          }}
-        >
-          <Zap size={15} color={progressColor} />
-          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap' }}>
-            จัดวางแล้ว {assignedDevices.length} / {devices.length} เครื่อง
-          </span>
-          {/* Bar track */}
-          <div
-            style={{
-              flex: 1,
-              height: 10,
-              background: '#E2E8F0',
-              borderRadius: '99px',
-              overflow: 'hidden',
-              position: 'relative',
-            }}
-          >
-            <div
-              style={{
-                height: '100%',
-                width: `${progressPct}%`,
-                borderRadius: '99px',
-                background:
-                  progressPct === 100
-                    ? '#16A34A'
-                    : progressPct >= 60
-                    ? '#D97706'
-                    : '#2563EB',
-                transition: 'width 0.5s cubic-bezier(0.34,1.56,0.64,1)',
-                backgroundSize: '200% 100%',
-                animation: progressPct > 0 && progressPct < 100 ? 'progressShine 2s linear infinite' : undefined,
-              }}
-            />
-          </div>
-          <span
-            style={{
-              fontSize: '0.82rem',
-              fontWeight: 800,
-              color: progressColor,
-              minWidth: 40,
-              textAlign: 'right',
-              transition: 'color 0.4s ease',
-            }}
-          >
-            {progressPct}%
-          </span>
-        </div>
-
-        {/* Main Workspace */}
-        <div style={{ display: 'flex', flex: 1, background: '#F8FAFC', minHeight: 480, overflow: 'hidden' }}>
-          {/* Canvas Area */}
-          <div style={{ flex: 1, padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-              <span style={{ fontSize: '0.78rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <HelpCircle size={14} /> ลากอุปกรณ์ไปวางบนผังเพื่อกำหนดพิกัด
-              </span>
-            </div>
-
-            {/* Drop Canvas */}
-            <div
-              ref={canvasRef}
-              onDragOver={handleCanvasDragOver}
-              onDragLeave={handleCanvasDragLeave}
-              onDrop={handleCanvasDrop}
-              style={{
-                position: 'relative',
-                flex: 1,
-                minHeight: 480,
-                background: '#FFFFFF',
-                borderRadius: '12px',
-                border: isDragOverCanvas ? '2px dashed #2563EB' : '2px dashed #CBD5E1',
-                boxShadow: isDragOverCanvas
-                  ? 'inset 0 0 0 4px rgba(37,99,235,0.08), 0 4px 20px rgba(37,99,235,0.12)'
-                  : 'inset 0 2px 8px rgba(0,0,0,0.03)',
-                backgroundImage: isDragOverCanvas
-                  ? 'radial-gradient(#93C5FD 1px, transparent 1px)'
-                  : 'radial-gradient(#CBD5E1 1px, transparent 1px)',
-                backgroundSize: '20px 20px',
-                overflow: 'hidden',
-                userSelect: 'none',
-                transition: 'border-color 0.2s ease, box-shadow 0.2s ease, background-image 0.2s ease',
-              }}
+        <div className="rle-actions">
+          {msg && (
+            <span
+              className={`rle-msg ${msg.type === 'success' ? 'rle-msg-ok' : 'rle-msg-err'}`}
+              role="status"
             >
-              {/* Room front label */}
-              <div
-                style={{
-                  position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
-                  background: '#E0F2FE', color: '#0369A1', border: '1px solid #BAE6FD',
-                  padding: '0.25rem 1rem', borderRadius: '20px', fontSize: '0.75rem',
-                  fontWeight: 700, pointerEvents: 'none',
-                  display: 'flex', alignItems: 'center', gap: 6,
-                }}
-              >
-                <Monitor size={14} /> กระดาน / หน้าห้อง
-              </div>
+              {msg.text}
+            </span>
+          )}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setShowApply(true)}
+            title="คัดลอกผังจากห้องอื่นมาทับห้องนี้"
+          >
+            <Copy size={15} /> คัดลอกผัง
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={handleReset} disabled={isSaving}>
+            <RotateCcw size={15} /> รีเซ็ต
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={isSaving}>
+            <Save size={15} /> {isSaving ? 'กำลังบันทึก...' : 'บันทึกผังห้อง'}
+          </button>
+        </div>
+      </div>
 
-              {/* Drop-zone overlay hint */}
-              {isDragOverCanvas && (
-                <div
-                  style={{
-                    position: 'absolute', inset: 0, display: 'flex',
-                    alignItems: 'center', justifyContent: 'center',
-                    pointerEvents: 'none', zIndex: 50,
-                  }}
-                >
-                  <div
-                    style={{
-                      background: 'rgba(37,99,235,0.08)', borderRadius: 12,
-                      padding: '0.75rem 2rem', fontSize: '0.9rem', fontWeight: 700,
-                      color: '#2563EB', border: '1.5px dashed #93C5FD',
-                    }}
-                  >
-                    วางเครื่องตรงนี้ได้เลย ✨
-                  </div>
-                </div>
-              )}
+      {/* ── Stats bar ── */}
+      <div className="rle-stats">
+        <span className="rle-stat">
+          <CheckCircle2 size={14} /> โต๊ะทั้งหมด {desks.length} โต๊ะ
+        </span>
+        <span className="rle-stat">
+          <Move size={14} /> วางบนผังแล้ว {placed.length}
+        </span>
+        <span className="rle-stat rle-stat-warn">
+          <AlertTriangle size={14} /> ยังไม่ได้วาง {unplaced.length}
+        </span>
+        <span className="rle-stat">
+          <Monitor size={14} /> เครื่องไม่มีโต๊ะ {pool.length}
+        </span>
+      </div>
 
-              {/* Ripple effects */}
-              {ripples.map((r) => (
-                <DropRipple key={r.id} x={r.x} y={r.y} onDone={() => removeRipple(r.id)} />
-              ))}
-
-              {/* Assigned devices on canvas */}
-              {assignedDevices.map((dev) => {
-                const isSelected = selectedDeviceId === dev.id;
-                const isJustDropped = lastDroppedId === dev.id;
-                const isBroken = dev.status === 'broken';
-                const isRepair = dev.status === 'under_repair';
-                const cardBg = isBroken ? '#FEF2F2' : isRepair ? '#FFFBEB' : '#F0FDF4';
-                const cardBorder = isSelected ? '#2563EB' : isBroken ? '#EF4444' : isRepair ? '#F59E0B' : '#22C55E';
-                const textColor = isBroken ? '#991B1B' : isRepair ? '#92400E' : '#166534';
-
-                return (
-                  <div
-                    key={dev.id}
-                    className="canvas-device"
-                    draggable
-                    onDragStart={(e) => {
-                      setDraggedDeviceId(dev.id);
-                      e.dataTransfer.setData('text/plain', dev.id.toString());
-                    }}
-                    onClick={() => setSelectedDeviceId(dev.id)}
-                    style={{
-                      position: 'absolute',
-                      left: `${dev.posX}%`,
-                      top: `${dev.posY}%`,
-                      transform: 'translate(-50%, -50%)',
-                      width: 72,
-                      height: 52,
-                      background: cardBg,
-                      border: `2px solid ${cardBorder}`,
-                      borderRadius: '8px',
-                      padding: '4px 6px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'grab',
-                      boxShadow: isSelected
-                        ? '0 0 0 3px rgba(37,99,235,0.3)'
-                        : '0 2px 4px rgba(0,0,0,0.06)',
-                      zIndex: isSelected ? 10 : 2,
-                      animation: isJustDropped ? 'dropBounce 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards' : undefined,
-                    }}
-                    title={`${dev.name} (${dev.posX}%, ${dev.posY}%)`}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: '0.72rem', fontWeight: 700, color: textColor }}>
-                      {isBroken ? (
-                        <AlertTriangle size={12} color="#EF4444" />
-                      ) : isRepair ? (
-                        <Wrench size={12} color="#F59E0B" />
-                      ) : (
-                        <CheckCircle2 size={12} color="#22C55E" />
-                      )}
-                      {dev.name.replace(/^PC-/i, '')}
-                    </div>
-                    <div style={{ fontSize: '0.62rem', color: '#64748B', marginTop: 2, fontFamily: 'monospace' }}>
-                      {dev.posX}%, {dev.posY}%
-                    </div>
-                  </div>
-                );
-              })}
-
-              {assignedDevices.length === 0 && (
-                <div
-                  style={{
-                    position: 'absolute', top: '50%', left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    textAlign: 'center', color: '#94A3B8',
-                  }}
-                >
-                  <Move size={36} style={{ opacity: 0.5, marginBottom: 8 }} />
-                  <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>ยังไม่มีอุปกรณ์วางบนผังห้องนี้</div>
-                  <div style={{ fontSize: '0.8rem', marginTop: 4 }}>
-                    ลากอุปกรณ์จากรายการด้านขวามาวางบนผังห้องได้เลย
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right Sidebar */}
+      {/* ── Workspace ── */}
+      <div className="rle-workspace">
+        {/* Canvas */}
+        <div className="rle-canvas-wrap">
           <div
-            onDragOver={handleSidebarDragOver}
-            onDragLeave={handleSidebarDragLeave}
-            onDrop={handleSidebarDrop}
-            style={{
-              width: 280,
-              background: isDragOverSidebar ? '#EFF6FF' : '#FFFFFF',
-              borderLeft: isDragOverSidebar ? '2px dashed #2563EB' : '1px solid #E2E8F0',
-              display: 'flex',
-              flexDirection: 'column',
-              position: 'relative',
-              transition: 'background 0.2s ease, border-left 0.2s ease',
+            ref={canvasRef}
+            className={`rle-canvas ${dragOverCanvas ? 'is-over' : ''}`}
+            onDragOver={handleCanvasDragOver}
+            onDragLeave={() => setDragOverCanvas(false)}
+            onDrop={handleCanvasDrop}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setSelectedKey(null);
             }}
           >
-            {/* Drop-zone overlay hint for sidebar */}
-            {isDragOverSidebar && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: 'rgba(239, 246, 255, 0.92)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  zIndex: 50,
-                  pointerEvents: 'none',
-                  padding: '1rem',
-                  textAlign: 'center',
-                  border: '2px dashed #2563EB',
-                }}
-              >
-                <RotateCcw size={32} color="#2563EB" style={{ marginBottom: 8 }} />
-                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#1D4ED8' }}>
-                  วางตรงนี้เพื่อดึงออกจากผัง
-                </span>
-                <span style={{ fontSize: '0.75rem', color: '#3B82F6', marginTop: 4 }}>
-                  (ย้ายกลับสู่รายการที่ยังไม่ได้วาง)
-                </span>
-              </div>
-            )}
+            <div className="rle-front-tag">กระดาน / หน้าห้อง</div>
 
-            {/* Palette header */}
-            <div style={{ padding: '0.85rem 1rem', borderBottom: '1px solid #E2E8F0', background: '#F8FAFC' }}>
-              <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <PlusCircle size={16} color="#2563EB" /> รายการที่ยังไม่ได้วาง ({unassignedDevices.length})
-              </h3>
-              <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: 2 }}>
-                ลากเข้า-ออกจาก Canvas เพื่อจัดวางตำแหน่ง
-              </div>
-            </div>
-
-            {/* Unassigned list / Stack widget */}
-            <div style={{ flex: 1, padding: '0.85rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {/* Main Stack Card (รวมเป็นอันเดียว) */}
-              <div
-                draggable={unassignedDevices.length > 0}
-                onDragStart={(e) => {
-                  const nextDev = unassignedDevices[0];
-                  if (nextDev) {
-                    setDraggedDeviceId(nextDev.id);
-                    e.dataTransfer.setData('text/plain', nextDev.id.toString());
+            {placed.map((desk) => {
+              const isSelected = desk.key === selectedKey;
+              const isTarget = desk.key === deskTargetKey;
+              return (
+                <div
+                  key={desk.key}
+                  className={`rle-desk ${isSelected ? 'is-selected' : ''} ${
+                    desk.deviceIds.length === 0 ? 'is-empty' : ''
+                  } ${isTarget ? 'is-target' : ''}`}
+                  style={{ left: `${desk.x}%`, top: `${desk.y}%` }}
+                  draggable
+                  onDragStart={(e) => startDeskDrag(e, desk.key)}
+                  onDragOver={(e) => handleDeskDragOver(e, desk.key)}
+                  onDragLeave={() =>
+                    setDeskTargetKey((k) => (k === desk.key ? null : k))
                   }
-                }}
-                style={{
-                  padding: '1rem',
-                  background: unassignedDevices.length > 0
-                    ? 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)'
-                    : '#F8FAFC',
-                  border: unassignedDevices.length > 0 ? '2px solid #93C5FD' : '2px dashed #CBD5E1',
-                  borderRadius: '12px',
-                  boxShadow: unassignedDevices.length > 0 ? '0 4px 14px rgba(37,99,235,0.12)' : 'none',
-                  cursor: unassignedDevices.length > 0 ? 'grab' : 'not-allowed',
-                  userSelect: 'none',
-                  transition: 'all 0.2s ease',
-                  position: 'relative',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Monitor size={20} color={unassignedDevices.length > 0 ? '#2563EB' : '#94A3B8'} />
-                    <span style={{ fontSize: '0.92rem', fontWeight: 700, color: unassignedDevices.length > 0 ? '#1E3A8A' : '#64748B' }}>
-                      โต๊ะคอมพิวเตอร์
+                  onDrop={(e) => handleDeskDrop(e, desk.key)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedKey(desk.key);
+                  }}
+                  title={desk.label}
+                >
+                  <div className="rle-desk-label">{desk.label}</div>
+                  <div className="rle-desk-chips">
+                    {desk.deviceIds.map((id) => {
+                      const dev = deviceById.get(id);
+                      if (!dev) return null;
+                      return (
+                        <span
+                          key={id}
+                          className="rle-desk-chip"
+                          draggable
+                          onDragStart={(e) => startDeviceDrag(e, id)}
+                          onDragEnd={handleDragEnd}
+                        >
+                          {dev.name}
+                        </span>
+                      );
+                    })}
+                    {desk.deviceIds.length === 0 && <span className="rle-desk-empty">ว่าง</span>}
+                  </div>
+                </div>
+              );
+            })}
+
+            {placed.length === 0 && (
+              <div className="rle-canvas-empty">
+                <Move size={34} />
+                <div className="rle-canvas-empty-title">
+                  {unplaced.length > 0
+                    ? 'ยังไม่มีโต๊ะบนผัง'
+                    : 'ยังไม่มีโต๊ะในห้องนี้'}
+                </div>
+                <div className="rle-canvas-empty-text">
+                  {unplaced.length > 0
+                    ? 'ลากโต๊ะจากแถบด้านข้างมาวางตรงนี้ หรือกด "เรียงอัตโนมัติ"'
+                    : 'กด "+ เพิ่มโต๊ะ" เพื่อเริ่มจัดผัง'}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Sidebar */}
+        <aside className={`rle-palette ${dragOverPalette ? 'is-over' : ''}`}>
+          <div
+            onDragOver={handlePaletteDragOver}
+            onDragLeave={() => setDragOverPalette(false)}
+            onDrop={handlePaletteDrop}
+            className="rle-palette-drop"
+          >
+            {/* ปุ่มเพิ่มโต๊ะ */}
+            <button className="btn btn-ghost btn-sm btn-full" onClick={handleAddDesk}>
+              <PlusCircle size={15} /> เพิ่มโต๊ะ
+            </button>
+
+            {/* โต๊ะยังไม่ได้วาง */}
+            <div className="rle-sec">
+              <div className="rle-sec-hd">
+                <span className="rle-sec-title">โต๊ะที่ยังไม่ได้วาง</span>
+                <span className="rle-sec-count">{unplaced.length}</span>
+              </div>
+              {unplaced.length > 0 && (
+                <button
+                  className="btn btn-ghost btn-sm btn-full rle-autobtn"
+                  onClick={handleAutoArrange}
+                >
+                  <Wand2 size={15} /> เรียงอัตโนมัติ ({unplaced.length})
+                </button>
+              )}
+              <div className="rle-list">
+                {unplaced.map((desk) => (
+                  <div
+                    key={desk.key}
+                    className={`rle-palette-desk ${desk.key === selectedKey ? 'is-selected' : ''}`}
+                    draggable
+                    onDragStart={(e) => startDeskDrag(e, desk.key)}
+                    onDragEnd={handleDragEnd}
+                    onClick={() => setSelectedKey(desk.key)}
+                  >
+                    <span className="rle-palette-desk-name">{desk.label}</span>
+                    <span className="rle-palette-desk-meta">
+                      {desk.deviceIds.length > 0
+                        ? `${desk.deviceIds.length} เครื่อง`
+                        : 'ว่าง'}
                     </span>
                   </div>
-                  <span
-                    style={{
-                      fontSize: '0.78rem',
-                      fontWeight: 800,
-                      color: unassignedDevices.length > 0 ? '#FFFFFF' : '#64748B',
-                      background: unassignedDevices.length > 0 ? '#2563EB' : '#CBD5E1',
-                      padding: '0.2rem 0.65rem',
-                      borderRadius: '20px',
-                    }}
-                  >
-                    เหลือ {unassignedDevices.length} / {devices.length}
-                  </span>
-                </div>
-
-                {unassignedDevices.length > 0 ? (
-                  <>
-                    <div style={{ fontSize: '0.78rem', color: '#3B82F6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span>✨ ลากการ์ดนี้ไปวางบนผัง (ทีละ 1 เครื่อง)</span>
-                    </div>
-                    <div style={{ fontSize: '0.7rem', color: '#64748B', marginTop: 4, fontFamily: 'monospace' }}>
-                      เครื่องถัดไปที่จะวาง: {unassignedDevices[0]?.name}
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ fontSize: '0.78rem', color: '#059669', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                    <Trophy size={16} /> วางครบตามจำนวน {devices.length} เครื่องแล้ว!
-                  </div>
+                ))}
+                {unplaced.length === 0 && (
+                  <div className="rle-hint">โต๊ะทุกตัวถูกวางบนผังแล้ว</div>
                 )}
               </div>
-
-              {/* Optional Accordion for Detailed List */}
-              {unassignedDevices.length > 0 && (
-                <div>
-                  <button
-                    onClick={() => setShowDetailedList((v) => !v)}
-                    style={{
-                      width: '100%',
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#64748B',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 4,
-                      padding: '0.35rem',
-                    }}
-                  >
-                    {showDetailedList ? '▲ ซ่อนรายชื่อเครื่องแบบแยก' : '▼ ดูรายชื่อเครื่องทั้งหมดแบบแยก'}
-                  </button>
-
-                  {showDetailedList && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.4rem', maxHeight: 220, overflowY: 'auto' }}>
-                      {unassignedDevices.map((dev) => (
-                        <div
-                          key={dev.id}
-                          className="palette-item"
-                          draggable
-                          onDragStart={(e) => {
-                            setDraggedDeviceId(dev.id);
-                            e.dataTransfer.setData('text/plain', dev.id.toString());
-                          }}
-                          style={{
-                            padding: '0.45rem 0.65rem',
-                            background: '#F8FAFC',
-                            border: '1px solid #E2E8F0',
-                            borderRadius: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            cursor: 'grab',
-                            fontSize: '0.78rem',
-                            fontWeight: 600,
-                            color: '#334155',
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <Monitor size={13} color="#64748B" />
-                            <span>{dev.name}</span>
-                          </div>
-                          <span style={{ fontSize: '0.65rem', color: '#94A3B8' }}>ลากเพื่อวาง</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
 
-            {/* Selected device inspector */}
-            {selectedDevice && (
-              <div style={{ padding: '0.85rem 1rem', borderTop: '1px solid #E2E8F0', background: '#F8FAFC' }}>
-                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', marginBottom: 6 }}>
-                  📌 เครื่องที่เลือก: {selectedDevice.name}
+            {/* เครื่องยังไม่มีโต๊ะ */}
+            <div className="rle-sec">
+              <div className="rle-sec-hd">
+                <span className="rle-sec-title">เครื่องที่ยังไม่มีโต๊ะ</span>
+                <span className="rle-sec-count">{pool.length}</span>
+              </div>
+              <div className="rle-list">
+                {pool.map((dev) => (
+                  <div
+                    key={dev.id}
+                    className="rle-pool-item"
+                    draggable
+                    onDragStart={(e) => startDeviceDrag(e, dev.id)}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <Monitor size={13} />
+                    <span>{dev.name}</span>
+                  </div>
+                ))}
+                {pool.length === 0 && (
+                  <div className="rle-hint">เครื่องทุกตัวผูกกับโต๊ะแล้ว</div>
+                )}
+              </div>
+            </div>
+
+            {/* Inspector */}
+            {selected && (
+              <div className="rle-sec rle-inspector">
+                <div className="rle-sec-hd">
+                  <span className="rle-sec-title">โต๊ะที่เลือก</span>
                 </div>
-                <div style={{ fontSize: '0.75rem', color: '#64748B', marginBottom: 8 }}>
-                  พิกัดปัจจุบัน: ({selectedDevice.posX}%, {selectedDevice.posY}%)
+                <label className="form-label" htmlFor="rle-label-input">
+                  ชื่อโต๊ะ
+                </label>
+                <input
+                  id="rle-label-input"
+                  className="form-input"
+                  value={selected.label}
+                  maxLength={60}
+                  onChange={(e) => handleLabelChange(selected.key, e.target.value)}
+                />
+                <div className="rle-coord">
+                  {selected.x !== null && selected.y !== null
+                    ? `พิกัด: ${selected.x}%, ${selected.y}%`
+                    : 'ยังไม่ได้วางบนผัง'}
                 </div>
+
+                <div className="rle-sec-hd rle-sec-hd-sub">
+                  <span className="rle-sec-title">เครื่องบนโต๊ะนี้</span>
+                  <span className="rle-sec-count">{selected.deviceIds.length}</span>
+                </div>
+                <div className="rle-list">
+                  {selected.deviceIds.map((id) => {
+                    const dev = deviceById.get(id);
+                    if (!dev) return null;
+                    return (
+                      <div key={id} className="rle-insp-device">
+                        <Monitor size={13} />
+                        <span>{dev.name}</span>
+                        <button
+                          className="rle-chip-remove"
+                          title="ดึงออกจากโต๊ะ"
+                          onClick={() => handleUnassignDevice(id)}
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {selected.deviceIds.length === 0 && (
+                    <div className="rle-hint">ลากเครื่องจากแถบด้านบนมาวางบนโต๊ะ</div>
+                  )}
+                </div>
+
                 <button
-                  onClick={() => handleUnassignDevice(selectedDevice.id)}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    gap: 6, padding: '0.4rem', fontSize: '0.78rem', fontWeight: 600,
-                    color: '#DC2626', background: '#FEE2E2', border: '1px solid #FCA5A5',
-                    borderRadius: '6px', cursor: 'pointer',
-                  }}
+                  className="btn btn-danger-outline btn-sm btn-full"
+                  onClick={() => handleDeleteDesk(selected)}
                 >
-                  <Trash2 size={13} /> ดึงออกจากผัง (ตั้งเป็น null)
+                  <Trash2 size={14} /> ลบโต๊ะนี้
                 </button>
               </div>
             )}
           </div>
-        </div>
+        </aside>
       </div>
-    </>
+
+      {/* ── Apply layout modal ── */}
+      {showApply && (
+        <div
+          className="modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !applyBusy) setShowApply(false);
+          }}
+        >
+          <div className="modal">
+            <div className="modal-drag-handle" />
+            <div className="modal-header">
+              <div className="modal-title">คัดลอกผังจากห้องอื่น</div>
+              <button
+                className="modal-close"
+                onClick={() => setShowApply(false)}
+                disabled={applyBusy}
+                aria-label="ปิด"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body">
+              {applyErr && <div className="alert alert-error">{applyErr}</div>}
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="rle-source-select">
+                  ห้องต้นทาง
+                </label>
+                <select
+                  id="rle-source-select"
+                  className="form-select"
+                  value={sourceId}
+                  onChange={(e) =>
+                    setSourceId(e.target.value === '' ? '' : Number(e.target.value))
+                  }
+                >
+                  <option value="">— เลือกห้อง —</option>
+                  {sourceOptions.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      ห้อง {r.name} (ชั้น {r.floor.number})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="rle-warn">
+                <AlertTriangle size={16} />
+                <span>
+                  การคัดลอกจะ<strong> แทนผังปัจจุบันของห้อง {roomName} ทั้งหมด</strong>
+                  {' '}(โต๊ะเดิม {preview?.existingDesks ?? '…'} โต๊ะ) และจับคู่เครื่องให้อัตโนมัติ
+                  — ขึ้นบันทึกในประวัติการแก้ไขทุกครั้ง
+                </span>
+              </div>
+
+              {sourceId !== '' && previewLoading && (
+                <div className="loading-center">
+                  <div className="spinner" />
+                  <span>กำลังคำนวณตัวอย่าง...</span>
+                </div>
+              )}
+
+              {preview && (
+                <table className="rle-preview">
+                  <tbody>
+                    <tr>
+                      <td>ห้องต้นทาง</td>
+                      <td>
+                        <strong>{preview.sourceRoomName}</strong>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>โต๊ะที่จะสร้าง (จากต้นทางที่มีเครื่อง)</td>
+                      <td>
+                        <strong>{preview.desksToCreate}</strong> / {preview.sourceDeskCount} โต๊ะ
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>จับคู่ชื่อเครื่องตรงกัน</td>
+                      <td>{preview.matchedByName} เครื่อง</td>
+                    </tr>
+                    <tr>
+                      <td>จับคู่ตามลำดับชื่อที่เหลือ</td>
+                      <td>{preview.assignedByOrder} เครื่อง</td>
+                    </tr>
+                    <tr>
+                      <td>เครื่องที่จะยังไม่มีโต๊ะ</td>
+                      <td className={preview.toPool > 0 ? 'rle-preview-warn' : ''}>
+                        {preview.toPool} เครื่อง / ทั้งหมด {preview.totalDevices}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
+
+              {sourceId !== '' && !previewLoading && !preview && !applyErr && (
+                <div className="rle-hint">ไม่สามารถคำนวณตัวอย่างได้</div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn btn-ghost"
+                onClick={() => setShowApply(false)}
+                disabled={applyBusy}
+              >
+                ยกเลิก
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleConfirmApply}
+                disabled={!preview || applyBusy}
+              >
+                {applyBusy
+                  ? 'กำลังคัดลอก...'
+                  : preview
+                  ? `ยืนยันคัดลอก (${preview.desksToCreate} โต๊ะ)`
+                  : 'ยืนยันคัดลอก'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,8 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
-import type { RoomDetail } from '../types';
+import type {
+  ApplyLayoutResult,
+  LayoutSavePayload,
+  LayoutSaveResult,
+  RoomDetail,
+} from '../types';
 import RoomLayoutEditor from '../components/RoomLayoutEditor';
 
 export default function AdminLayoutEditorPage() {
@@ -37,18 +42,34 @@ export default function AdminLayoutEditorPage() {
       .finally(() => setLoading(false));
   }, [roomId]);
 
-  const handleSave = async (
-    updatedDevices: Array<{ id: number; posX: number | null; posY: number | null }>
-  ) => {
-    if (!token) throw new Error('กรุณาเข้าสู่ระบบก่อนทำการบันทึก');
-    if (role !== 'admin') throw new Error('เฉพาะ Admin เท่านั้นที่มีสิทธิ์แก้ไขผังห้อง');
-
-    await api.admin.updateRoomLayout(token, roomId, updatedDevices);
-
-    // Refresh room details from API to keep state synced
+  const refresh = useCallback(async () => {
     const refreshed = await api.buildings.roomDetail(roomId);
     setRoomDetail(refreshed);
-  };
+  }, [roomId]);
+
+  const handleSave = useCallback(
+    async (payload: LayoutSavePayload): Promise<LayoutSaveResult> => {
+      if (!token) throw new Error('กรุณาเข้าสู่ระบบก่อนทำการบันทึก');
+      if (role !== 'admin') throw new Error('เฉพาะ Admin เท่านั้นที่มีสิทธิ์แก้ไขผังห้อง');
+
+      const res = await api.admin.updateRoomLayout(token, roomId, payload);
+      await refresh();
+      return res;
+    },
+    [token, role, roomId, refresh]
+  );
+
+  const handleApplyLayout = useCallback(
+    async (sourceRoomId: number, confirm: boolean): Promise<ApplyLayoutResult> => {
+      if (!token) throw new Error('กรุณาเข้าสู่ระบบก่อนทำการบันทึก');
+      if (role !== 'admin') throw new Error('เฉพาะ Admin เท่านั้นที่มีสิทธิ์แก้ไขผังห้อง');
+
+      const res = await api.admin.applyRoomLayout(token, roomId, sourceRoomId, confirm);
+      if (confirm) await refresh();
+      return res;
+    },
+    [token, role, roomId, refresh]
+  );
 
   if (loading) {
     return (
@@ -80,10 +101,12 @@ export default function AdminLayoutEditorPage() {
     <RoomLayoutEditor
       roomId={roomId}
       roomName={roomDetail.name}
+      initialDesks={roomDetail.desks}
       initialDevices={roomDetail.devices}
       allRooms={allRooms}
       onSelectRoom={(newRoomId) => navigate(`/admin/rooms/${newRoomId}/editor`)}
       onSave={handleSave}
+      onApplyLayout={handleApplyLayout}
       onBack={() => navigate('/admin/rooms')}
     />
   );

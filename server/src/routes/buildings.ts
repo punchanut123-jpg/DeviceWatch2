@@ -31,7 +31,7 @@ router.get('/all-rooms', async (_req, res) => {
             building: { select: { name: true } },
           },
         },
-        _count: { select: { devices: true } },
+        _count: { select: { devices: true, desks: { where: { devices: { some: {} } } } } },
       },
       orderBy: [{ floor: { number: 'asc' } }, { name: 'asc' }],
     });
@@ -69,7 +69,7 @@ router.get('/floors/:floorId/rooms', async (req, res) => {
       select: {
         id: true,
         name: true,
-        _count: { select: { devices: true } },
+        _count: { select: { devices: true, desks: { where: { devices: { some: {} } } } } },
       },
       orderBy: { name: 'asc' },
     });
@@ -104,6 +104,19 @@ router.get('/rooms/:roomId', async (req, res) => {
             status: true,
           },
           orderBy: { name: 'asc' },
+        },
+        desks: {
+          select: {
+            id: true,
+            label: true,
+            x: true,
+            y: true,
+            devices: {
+              select: { id: true, name: true, status: true },
+              orderBy: { name: 'asc' },
+            },
+          },
+          orderBy: { label: 'asc' },
         },
       },
     });

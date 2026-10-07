@@ -31,6 +31,20 @@ model Room {
   floor      Floor    @relation(fields: [floorId], references: [id])
   lineUserId String?
   devices    Device[]
+  desks      Desk[]
+  history    LayoutHistory[]
+}
+
+model Desk {
+  id      Int      @id @default(autoincrement())
+  label   String
+  x       Float?
+  y       Float?
+  roomId  Int
+  room    Room     @relation(fields: [roomId], references: [id])
+  devices Device[]
+
+  @@index([roomId])
 }
 
 model Device {
@@ -41,7 +55,22 @@ model Device {
   status  String   @default("normal") // normal | broken | under_repair
   roomId  Int
   room    Room     @relation(fields: [roomId], references: [id])
+  deskId  Int?
+  desk    Desk?    @relation(fields: [deskId], references: [id])
   tickets Ticket[]
+}
+
+model LayoutHistory {
+  id        Int      @id @default(autoincrement())
+  roomId    Int
+  room      Room     @relation(fields: [roomId], references: [id])
+  action    String // save_layout | apply_layout | (round 3: ...)
+  adminName String
+  summary   String   @db.Text
+  snapshot  Json
+  createdAt DateTime @default(now())
+
+  @@index([roomId])
 }
 
 model Ticket {

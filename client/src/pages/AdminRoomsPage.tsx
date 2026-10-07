@@ -8,7 +8,7 @@ interface RoomItem {
   id: number;
   name: string;
   floor: { number: number; building: { name: string } };
-  _count: { devices: number };
+  _count: { devices: number; desks: number };
 }
 
 export default function AdminRoomsPage() {
@@ -138,7 +138,9 @@ export default function AdminRoomsPage() {
                           }}
                         >
                           <Monitor size={15} color="#475569" />
-                          <span>{room._count.devices} เครื่อง</span>
+                          <span>
+                            {room._count.devices} เครื่อง · {room._count.desks} โต๊ะ
+                          </span>
                         </div>
                       </div>
 
