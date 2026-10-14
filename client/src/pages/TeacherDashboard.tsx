@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
+  Armchair,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -20,7 +21,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
-import type { Device } from '../types';
 import StatCard from '../components/StatCard';
 
 interface RoomSummary {
@@ -28,20 +28,35 @@ interface RoomSummary {
   roomName: string;
   buildingName: string;
   floorNumber: number;
-  totalDevices: number;
-  brokenCount: number;
-  underRepairCount: number;
+  totalDesks: number;
+  brokenDesks: number;
+  underRepairDesks: number;
   totalIssues: number;
 }
 
+interface BrokenDesk {
+  id: number;
+  label: string;
+  status: string;
+  roomName: string;
+  floorNumber: number;
+  buildingName: string;
+  parts: { name: string; status: string }[];
+}
+
 interface OverviewData {
-  brokenDevices: Device[];
+  brokenDesks: BrokenDesk[];
   stats: {
     total: number;
     normal: number;
     broken: number;
     underRepair: number;
     ticketsToday: number;
+    components?: {
+      total: number;
+      broken: number;
+      underRepair: number;
+    };
   };
   roomsSummary: RoomSummary[];
   trend: { date: string; count: number }[];
@@ -51,7 +66,7 @@ type TabType = 'overview' | 'rooms' | 'trend';
 
 const TABS: { key: TabType; label: string; title: string; icon: typeof School }[] = [
   { key: 'overview', label: 'ภาพรวมระบบ', title: 'ภาพรวมสภาพอุปกรณ์ในคณะ', icon: LayoutDashboard },
-  { key: 'rooms', label: 'รายละเอียดห้องเรียน', title: 'สถานะเครื่องคอมพิวเตอร์รายห้อง', icon: School },
+  { key: 'rooms', label: 'รายละเอียดห้องเรียน', title: 'สถานะโต๊ะเรียนรายห้อง', icon: School },
   { key: 'trend', label: 'แนวโน้มแจ้งซ่อม', title: 'กราฟแนวโน้มแจ้งเสียย้อนหลัง 7 วัน', icon: TrendingUp },
 ];
 
@@ -71,7 +86,7 @@ export default function TeacherDashboard() {
 
   // Search & Sort States
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortField, setSortField] = useState<'roomName' | 'totalDevices' | 'totalIssues'>('totalIssues');
+  const [sortField, setSortField] = useState<'roomName' | 'totalDesks' | 'totalIssues'>('totalIssues');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // SVG Chart States
@@ -127,7 +142,7 @@ export default function TeacherDashboard() {
       });
   }, [data, searchQuery, sortField, sortDirection]);
 
-  const handleSort = (field: 'roomName' | 'totalDevices' | 'totalIssues') => {
+  const handleSort = (field: 'roomName' | 'totalDesks' | 'totalIssues') => {
     if (sortField === field) {
       setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -136,7 +151,7 @@ export default function TeacherDashboard() {
     }
   };
 
-  const sortIcon = (field: 'roomName' | 'totalDevices' | 'totalIssues') => {
+  const sortIcon = (field: 'roomName' | 'totalDesks' | 'totalIssues') => {
     if (sortField !== field) return null;
     return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
   };
@@ -238,12 +253,14 @@ export default function TeacherDashboard() {
             </div>
           ) : data ? (
             <>
-              <section className="stats-grid stats-grid-5 mb-2">
-                <StatCard icon={Monitor} label="คอมพิวเตอร์ทั้งหมด" value={data.stats.total} />
+              <section className="stats-grid stats-grid-7 mb-2">
+                <StatCard icon={Armchair} label="โต๊ะทั้งหมด" value={data.stats.total} />
                 <StatCard icon={CheckCircle2} label="สถานะพร้อมใช้งาน" value={data.stats.normal} tone="success" />
                 <StatCard icon={AlertCircle} label="ชำรุดรอซ่อม" value={data.stats.broken} tone="danger" />
                 <StatCard icon={Wrench} label="อยู่ระหว่างซ่อมแซม" value={data.stats.underRepair} tone="warning" />
                 <StatCard icon={ClipboardList} label="แจ้งซ่อมวันนี้" value={data.stats.ticketsToday} />
+                <StatCard icon={Monitor} label="ชิ้นส่วนเสีย" value={data.stats.components?.broken ?? 0} tone="danger" />
+                <StatCard icon={Wrench} label="ชิ้นส่วนซ่อมอยู่" value={data.stats.components?.underRepair ?? 0} tone="warning" />
               </section>
 
               {/* TAB: Overview */}
@@ -265,7 +282,7 @@ export default function TeacherDashboard() {
                             <tr>
                               <th>ห้องเรียน</th>
                               <th>อาคาร</th>
-                              <th className="td-center">เครื่องทั้งหมด</th>
+                              <th className="td-center">โต๊ะทั้งหมด</th>
                               <th className="td-center">ชำรุดรวม</th>
                             </tr>
                           </thead>
@@ -274,9 +291,9 @@ export default function TeacherDashboard() {
                               <tr key={room.roomId}>
                                 <td className="td-strong">ห้อง {room.roomName}</td>
                                 <td>{room.buildingName}</td>
-                                <td className="td-center">{room.totalDevices} เครื่อง</td>
+                                <td className="td-center">{room.totalDesks} โต๊ะ</td>
                                 <td className="td-center">
-                                  <span className="badge badge-broken">{room.totalIssues} เครื่อง</span>
+                                  <span className="badge badge-broken">{room.totalIssues} โต๊ะ</span>
                                 </td>
                               </tr>
                             ))}
@@ -284,7 +301,7 @@ export default function TeacherDashboard() {
                               <tr>
                                 <td colSpan={4} className="td-empty">
                                   <span>
-                                    <CheckCircle2 size={16} /> ขณะนี้ไม่มีห้องที่มีคอมพิวเตอร์ชำรุด
+                                    <CheckCircle2 size={16} /> ขณะนี้ไม่มีห้องที่มีโต๊ะชำรุด
                                   </span>
                                 </td>
                               </tr>
@@ -298,30 +315,35 @@ export default function TeacherDashboard() {
                   <div className="td-panel">
                     <div className="td-panel-header">
                       <div className="td-panel-title">
-                        <Wrench size={18} /> รายการเครื่องชำรุด ({data.brokenDevices.length} เครื่อง)
+                        <Wrench size={18} /> รายการโต๊ะชำรุด ({data.brokenDesks.length} โต๊ะ)
                       </div>
                     </div>
                     <div className="td-panel-body">
                       <div className="td-broken-list">
-                        {data.brokenDevices.map((device) => (
-                          <div key={device.id} className="td-broken-item">
+                        {data.brokenDesks.map((desk) => (
+                          <div key={desk.id} className="td-broken-item">
                             <div>
                               <div className="td-broken-name">
-                                <Monitor size={15} /> {device.name}
+                                <Armchair size={15} /> {desk.label}
                               </div>
                               <div className="td-broken-loc">
-                                ห้อง {device.room?.name} • ชั้น {device.room?.floor?.number} ({device.room?.floor?.building?.name})
+                                ห้อง {desk.roomName} • ชั้น {desk.floorNumber} ({desk.buildingName})
                               </div>
+                              {desk.parts.length > 0 && (
+                                <div className="td-broken-parts">
+                                  ชิ้นส่วนเสีย: {desk.parts.map((p) => p.name).join(', ')}
+                                </div>
+                              )}
                             </div>
-                            <span className={`badge badge-${device.status}`}>
-                              {DEVICE_STATUS_LABEL[device.status] ?? device.status}
+                            <span className={`badge badge-${desk.status}`}>
+                              {DEVICE_STATUS_LABEL[desk.status] ?? desk.status}
                             </span>
                           </div>
                         ))}
-                        {data.brokenDevices.length === 0 && (
+                        {data.brokenDesks.length === 0 && (
                           <div className="td-broken-empty">
                             <CheckCircle2 size={40} />
-                            <div>เครื่องคอมพิวเตอร์ทุกห้องพร้อมใช้งานดีเยี่ยม!</div>
+                            <div>โต๊ะทุกห้องพร้อมใช้งานดีเยี่ยม!</div>
                           </div>
                         )}
                       </div>
@@ -335,7 +357,7 @@ export default function TeacherDashboard() {
                 <div className="td-panel">
                   <div className="td-panel-header">
                     <div className="td-panel-title">
-                      <School size={18} /> ค้นหาและตรวจสอบเครื่องเสียรายห้อง
+                      <School size={18} /> ค้นหาและตรวจสอบโต๊ะเสียรายห้อง
                     </div>
                   </div>
                   <div className="td-panel-body">
@@ -359,8 +381,8 @@ export default function TeacherDashboard() {
                             </th>
                             <th>อาคาร</th>
                             <th>ชั้น</th>
-                            <th className="td-sortable td-center" onClick={() => handleSort('totalDevices')}>
-                              <span className="td-sort-th">เครื่องทั้งหมด {sortIcon('totalDevices')}</span>
+                            <th className="td-sortable td-center" onClick={() => handleSort('totalDesks')}>
+                              <span className="td-sort-th">โต๊ะทั้งหมด {sortIcon('totalDesks')}</span>
                             </th>
                             <th className="td-center">ปกติ</th>
                             <th className="td-center">เสีย</th>
@@ -376,15 +398,15 @@ export default function TeacherDashboard() {
                               <td className="td-strong td-room-name">ห้อง {room.roomName}</td>
                               <td>{room.buildingName}</td>
                               <td>ชั้น {room.floorNumber}</td>
-                              <td className="td-center td-strong">{room.totalDevices} เครื่อง</td>
+                              <td className="td-center td-strong">{room.totalDesks} โต๊ะ</td>
                               <td className="td-center td-num-ok">
-                                {room.totalDevices - room.brokenCount - room.underRepairCount}
+                                {room.totalDesks - room.brokenDesks - room.underRepairDesks}
                               </td>
-                              <td className="td-center td-num-bad">{room.brokenCount}</td>
-                              <td className="td-center td-num-warn">{room.underRepairCount}</td>
+                              <td className="td-center td-num-bad">{room.brokenDesks}</td>
+                              <td className="td-center td-num-warn">{room.underRepairDesks}</td>
                               <td className="td-center">
                                 {room.totalIssues > 0 ? (
-                                  <span className="badge badge-broken">{room.totalIssues} เครื่อง</span>
+                                  <span className="badge badge-broken">{room.totalIssues} โต๊ะ</span>
                                 ) : (
                                   <span className="badge badge-normal">0</span>
                                 )}

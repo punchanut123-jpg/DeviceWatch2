@@ -59,3 +59,8 @@ export const DUPLICATE_ALLOWED: Record<DeviceType, boolean> = {
 
 /** ลำดับความสำคัญของสถานะโต๊ะ: แย่กว่าอยู่หลัง (คำนวณ rollup จากชิ้นหลัก) */
 export const STATUS_SEVERITY: readonly string[] = ['normal', 'under_repair', 'broken'] as const;
+
+/** คู่ชนิดที่ห้ามอยู่โต๊ะเดียวกัน (เช่น case + aio ไม่ควรอยู่ร่วมกัน) */
+export const FORBIDDEN_COMBOS: readonly [DeviceType, DeviceType][] = [
+  ['case', 'aio'],
+] as const;

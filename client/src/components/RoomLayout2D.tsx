@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import type { Desk, Device, DeviceStatus } from '../types';
 import { STATUS_TOKENS } from '../utils/roomGrouping';
 import { gridPositions } from '../utils/deskLayout';
+import { DEVICE_TYPE_LABELS } from '../utils/layoutRules';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -22,6 +23,7 @@ interface RoomLayout2DProps {
   desks: Desk[];
   roomName?: string;
   onDeviceClick: (device: Device) => void;
+  onDeskClick?: (desk: Desk) => void;
   selectedDeviceId?: number | null;
 }
 
@@ -39,6 +41,7 @@ export default function RoomLayout2D({
   desks,
   roomName = '',
   onDeviceClick,
+  onDeskClick,
   selectedDeviceId,
 }: RoomLayout2DProps) {
   const [viewMode, setViewMode] = useState<'floorplan' | 'grid'>('floorplan');
@@ -67,30 +70,57 @@ export default function RoomLayout2D({
   const effectiveScale = fitScale !== null ? fitScale * zoomLevel : zoomLevel;
   const zoomPercent = Math.round(zoomLevel * 100);
 
-  // ── สถานะเครื่องทั้งห้อง ──
-  const stats = useMemo(
-    () => ({
-      total: devices.length,
-      normal: devices.filter((d) => d.status === 'normal').length,
-      broken: devices.filter((d) => d.status === 'broken').length,
-      repair: devices.filter((d) => d.status === 'under_repair').length,
-    }),
-    [devices]
-  );
+  // ── สถิติทั้งห้อง: นับ "โต๊ะ" (เฉพาะโต๊ะที่มีเครื่อง ≥ 1) ตาม rollup ชิ้นหลัก ──
+  const stats = useMemo(() => {
+    const counts = { total: 0, normal: 0, broken: 0, repair: 0 };
+    for (const desk of desks) {
+      if (desk.devices.length === 0) continue;
+      counts.total += 1;
+      if (desk.status === 'broken') counts.broken += 1;
+      else if (desk.status === 'under_repair') counts.repair += 1;
+      else counts.normal += 1;
+    }
+    return counts;
+  }, [desks]);
 
   const deviceById = useMemo(() => new Map(devices.map((d) => [d.id, d])), [devices]);
 
-  // ── ตัวกรอง ──
-  const matchesFilter = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    return (d: Device) => {
-      const matchStatus = statusFilter === 'all' || d.status === statusFilter;
-      const matchQuery = !q || d.name.toLowerCase().includes(q) || d.id.toString().includes(q);
-      return matchStatus && matchQuery;
-    };
-  }, [statusFilter, searchQuery]);
+  // ── ตัวกรอง: สถานะกรองระดับ "โต๊ะ" (rollup), ค้นหากรองระดับ "ชิ้นส่วน" ──
+  const query = searchQuery.toLowerCase().trim();
+  const matchesQuery = (d: Device) =>
+    !query || d.name.toLowerCase().includes(query) || d.id.toString().includes(query);
 
-  const filterActive = statusFilter !== 'all' || searchQuery.trim().length > 0;
+  const deskStatusOk = (desk: Desk) =>
+    statusFilter === 'all' || desk.status === statusFilter;
+
+  const deskMatches = (desk: Desk) => {
+    if (!deskStatusOk(desk)) return false;
+    if (!query) return true;
+    if (desk.devices.length === 0) return false;
+    return desk.devices.some((d) => {
+      const dev = deviceById.get(d.id);
+      return dev ? matchesQuery(dev) : false;
+    });
+  };
+
+  // ชิ้นส่วน → สถานะโต๊ะที่มันอยู่ (null = ยังไม่มีโต๊ะ) ใช้กรองทั้งผังและ Grid
+  const deskStatusByDevice = useMemo(() => {
+    const map = new Map<number, DeviceStatus | null>();
+    for (const desk of desks) {
+      for (const dev of desk.devices) map.set(dev.id, desk.status);
+    }
+    return map;
+  }, [desks]);
+
+  const partMatches = (d: Device) => {
+    if (statusFilter !== 'all') {
+      const deskStatus = deskStatusByDevice.get(d.id) ?? null;
+      if (deskStatus !== statusFilter) return false;
+    }
+    return matchesQuery(d);
+  };
+
+  const filterActive = statusFilter !== 'all' || query.length > 0;
 
   // ── โต๊ะที่จะวาด: มีพิกัดจริง → ใช้เลย, ยังไม่มีสักโต๊ะ → กริดเต็มผัง ──
   const { displayDesks, stripDesks } = useMemo(() => {
@@ -142,9 +172,10 @@ export default function RoomLayout2D({
   const hasStrip = stripDesks.length > 0 || looseDevices.length > 0;
 
   const renderChip = (device: Device, deskLabel?: string) => {
-    if (!matchesFilter(device)) return null;
+    if (!partMatches(device)) return null;
     const conf = STATUS_TOKENS[device.status] || STATUS_TOKENS.normal;
     const isSelected = selectedDeviceId === device.id;
+    const typeLabel = device.deviceType ? DEVICE_TYPE_LABELS[device.deviceType] : '';
     return (
       <button
         key={device.id}
@@ -155,10 +186,11 @@ export default function RoomLayout2D({
         }}
         onMouseEnter={() => setHoveredDevice(device)}
         onMouseLeave={() => setHoveredDevice(null)}
-        title={`${device.name} — ${conf.label}${deskLabel ? ` · ${deskLabel}` : ''}`}
+        title={`${device.name} (${typeLabel}) — ${conf.label}${deskLabel ? ` · ${deskLabel}` : ''}`}
       >
         <span className="rl2d-chip-dot" style={{ background: conf.border }} />
         <span className="rl2d-chip-name">{device.name}</span>
+        <span className="rl2d-chip-type">{typeLabel}</span>
       </button>
     );
   };
@@ -264,7 +296,7 @@ export default function RoomLayout2D({
 
         <div className="rl2d-hint-text">
           <Info size={13} color="#94A3B8" />
-          คลิกที่ชื่อเครื่องบนโต๊ะเพื่อดูรายละเอียด / แจ้งซ่อม
+          สถิตินับเป็นโต๊ะ · คลิกชิ้นส่วนเพื่อแจ้งซ่อม / คลิกตัวโต๊ะเพื่อดูชิ้นส่วน
         </div>
       </div>
 
@@ -305,26 +337,39 @@ export default function RoomLayout2D({
                 </div>
                 <div className="rl2d-window-bar" />
 
-                {/* โต๊ะจริงจาก DB (x/y %) */}
+                {/* โต๊ะจริงจาก DB (x/y %) — สีขอบตาม rollup สถานะ */}
                 {displayDesks.map((desk) => {
+                  const dimmed = filterActive && !deskMatches(desk);
+                  const statusClass = desk.status ? `rl2d-desk-st-${desk.status}` : '';
                   const visibleCount = desk.devices.filter((d) => {
                     const dev = deviceById.get(d.id);
-                    return dev ? matchesFilter(dev) : false;
+                    return dev ? partMatches(dev) : false;
                   }).length;
-                  const dimmed = filterActive && desk.devices.length > 0 && visibleCount === 0;
 
                   return (
                     <div
                       key={desk.id}
-                      className={`rl2d-desk ${dimmed ? 'is-dimmed' : ''} ${
+                      className={`rl2d-desk ${statusClass} ${dimmed ? 'is-dimmed' : ''} ${
                         desk.devices.length === 0 ? 'is-empty' : ''
                       }`}
                       style={{
                         left: `${(desk.drawX / 100) * BASE_W}px`,
                         top: `${(desk.drawY / 100) * BASE_H}px`,
                       }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeskClick?.(desk);
+                      }}
+                      title={`ดูรายละเอียด ${desk.label}`}
                     >
-                      <div className="rl2d-desk-label">{desk.label}</div>
+                      <div className="rl2d-desk-label">
+                        {desk.label}
+                        <span className="rl2d-desk-count">
+                          {desk.devices.length > 0 && !dimmed
+                            ? `${visibleCount}/${desk.devices.length}`
+                            : desk.devices.length}
+                        </span>
+                      </div>
                       <div className="rl2d-desk-chips">
                         {desk.devices.map((d) => {
                           const dev = deviceById.get(d.id);
@@ -343,6 +388,11 @@ export default function RoomLayout2D({
               <div className="rl2d-tooltip">
                 <div className="rl2d-tooltip-name">
                   <Monitor size={14} color="#60A5FA" /> {hoveredDevice.name}
+                  {hoveredDevice.deviceType && (
+                    <span className="rl2d-tooltip-type">
+                      {DEVICE_TYPE_LABELS[hoveredDevice.deviceType]}
+                    </span>
+                  )}
                 </div>
                 <div
                   className="rl2d-tooltip-status"
@@ -400,7 +450,13 @@ export default function RoomLayout2D({
               <div className="rl2d-strip-list">
                 {stripDesks.map((desk) => (
                   <div key={desk.id} className="rl2d-strip-desk">
-                    <span className="rl2d-strip-desk-label">{desk.label}</span>
+                    <button
+                      className="rl2d-strip-desk-label"
+                      onClick={() => onDeskClick?.(desk)}
+                      title="ดูรายละเอียดโต๊ะ"
+                    >
+                      {desk.label}
+                    </button>
                     <div className="rl2d-strip-chips">
                       {desk.devices.map((d) => {
                         const dev = deviceById.get(d.id);
@@ -426,7 +482,7 @@ export default function RoomLayout2D({
       ) : (
         /* Grid / List View */
         <div className="rl2d-grid-wrap">
-          {devices.filter(matchesFilter).map((device) => {
+          {devices.filter(partMatches).map((device) => {
             const conf = STATUS_TOKENS[device.status] || STATUS_TOKENS.normal;
             const isSelected = selectedDeviceId === device.id;
             return (
@@ -442,6 +498,9 @@ export default function RoomLayout2D({
                   {renderStatusIcon(device.status, 16)}
                 </div>
                 <div className="rl2d-grid-name">{device.name.replace(/^PC-/i, '')}</div>
+                <div className="rl2d-grid-type">
+                  {device.deviceType ? DEVICE_TYPE_LABELS[device.deviceType] : ''}
+                </div>
                 <div className="rl2d-grid-status" style={{ color: conf.text }}>
                   {conf.label}
                 </div>
@@ -456,7 +515,7 @@ export default function RoomLayout2D({
 
 function deskLabelOf(desks: Desk[], deviceId: number): string | null {
   for (const d of desks) {
-    if (d.devices.some((dev) => dev.id === deviceId)) return `โต๊ะ: ${d.label}`;
+    if (d.devices.some((dev) => dev.id === deviceId)) return `${d.label}`;
   }
   return null;
 }

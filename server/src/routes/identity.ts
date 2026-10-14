@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { countDesksByStatus, rollupDeskStatus } from '../services/deskRollup';
+import { STATUS_SEVERITY } from '../constants/layoutRules';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -80,21 +82,24 @@ router.get('/teacher/overview', requireAuth, async (req: AuthRequest, res: Respo
     todayStart.setHours(0, 0, 0, 0);
 
     const [
-      totalDevices,
-      brokenDevicesCount,
-      underRepairDevicesCount,
       ticketsToday,
       allRooms,
-      last7DaysTickets
+      last7DaysTickets,
+      totalComponents,
+      brokenComponents,
+      underRepairComponents,
     ] = await Promise.all([
-      prisma.device.count(),
-      prisma.device.count({ where: { status: 'broken' } }),
-      prisma.device.count({ where: { status: 'under_repair' } }),
       prisma.ticket.count({ where: { createdAt: { gte: todayStart } } }),
       prisma.room.findMany({
         include: {
-          devices: {
-            select: { status: true }
+          desks: {
+            select: {
+              id: true,
+              label: true,
+              devices: {
+                select: { name: true, status: true, deviceType: true },
+              },
+            },
           },
           floor: {
             include: { building: true }
@@ -108,40 +113,56 @@ router.get('/teacher/overview', requireAuth, async (req: AuthRequest, res: Respo
           }
         },
         select: { createdAt: true }
-      })
+      }),
+      prisma.device.count(),
+      prisma.device.count({ where: { status: 'broken' } }),
+      prisma.device.count({ where: { status: 'under_repair' } }),
     ]);
 
-    // Format rooms summary
+    // สถิติรวม = นับโต๊ะ (เฉพาะโต๊ะที่มีเครื่อง ≥ 1) ตาม rollup ชิ้นหลัก
+    const globalCounts = countDesksByStatus(
+      allRooms.flatMap(room => room.desks)
+    );
+
+    // Format rooms summary (นับโต๊ะรายห้อง)
     const roomsSummary = allRooms.map(room => {
-      const total = room.devices.length;
-      const broken = room.devices.filter(d => d.status === 'broken').length;
-      const underRepair = room.devices.filter(d => d.status === 'under_repair').length;
+      const counts = countDesksByStatus(room.desks);
       return {
         roomId: room.id,
         roomName: room.name,
         buildingName: room.floor.building.name,
         floorNumber: room.floor.number,
-        totalDevices: total,
-        brokenCount: broken,
-        underRepairCount: underRepair,
-        totalIssues: broken + underRepair
+        totalDesks: counts.total,
+        brokenDesks: counts.broken,
+        underRepairDesks: counts.underRepair,
+        totalIssues: counts.broken + counts.underRepair
       };
     });
 
-    // We can also find the brokenDevices list to show detailed cards/lists if needed
-    const brokenDevicesList = await prisma.device.findMany({
-      where: {
-        status: { in: ['broken', 'under_repair'] }
-      },
-      include: {
-        room: {
-          include: {
-            floor: {
-              include: { building: true }
-            }
-          }
-        }
-      }
+    // โต๊ะที่มีปัญหา (rollup ไม่ใช่ normal) พร้อมชิ้นส่วนที่เสีย
+    const brokenDesks = allRooms.flatMap(room =>
+      room.desks
+        .map(desk => {
+          const status = rollupDeskStatus(desk.devices);
+          return {
+            id: desk.id,
+            label: desk.label,
+            status,
+            roomName: room.name,
+            floorNumber: room.floor.number,
+            buildingName: room.floor.building.name,
+            parts: desk.devices
+              .filter(d => d.status !== 'normal')
+              .map(d => ({ name: d.name, status: d.status }))
+          };
+        })
+        .filter(d => d.status !== null && d.status !== 'normal')
+    );
+    brokenDesks.sort((a, b) => {
+      const bySeverity =
+        STATUS_SEVERITY.indexOf(b.status!) - STATUS_SEVERITY.indexOf(a.status!);
+      if (bySeverity !== 0) return bySeverity;
+      return a.roomName.localeCompare(b.roomName, 'th', { numeric: true });
     });
 
     // Format trend data (last 7 days in Thai locale)
@@ -163,13 +184,19 @@ router.get('/teacher/overview', requireAuth, async (req: AuthRequest, res: Respo
     const trend = Array.from(trendMap.entries()).map(([date, count]) => ({ date, count }));
 
     res.json({
-      brokenDevices: brokenDevicesList,
+      brokenDesks,
       stats: {
-        total: totalDevices,
-        normal: totalDevices - brokenDevicesCount - underRepairDevicesCount,
-        broken: brokenDevicesCount,
-        underRepair: underRepairDevicesCount,
-        ticketsToday
+        total: globalCounts.total,
+        normal: globalCounts.normal,
+        broken: globalCounts.broken,
+        underRepair: globalCounts.underRepair,
+        ticketsToday,
+        // Component stats (นับทั้งโต๊ะ + pool)
+        components: {
+          total: totalComponents,
+          broken: brokenComponents,
+          underRepair: underRepairComponents
+        }
       },
       roomsSummary,
       trend

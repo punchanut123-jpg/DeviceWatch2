@@ -84,21 +84,52 @@ router.post('/', ticketRateLimit, async (req, res) => {
     console.log(`  ✅ พบ device: id=${device.id}, name=${device.name}, roomId=${device.roomId}`);
     console.log(`  📍 Room: name=${device.room.name}, lineUserId=${device.room.lineUserId ?? 'NULL'}`);
 
-    // ── Anti-spam: ป้องกันแจ้งซ่อมเครื่องเดิมซ้ำ ──────────
-    const existingOpenTicket = await prisma.ticket.findFirst({
+    // ── Anti-spam: ป้องกันแจ้งซ่อมซ้ำที่ระดับชิ้น (device) ──────────
+    const existingDeviceTicket = await prisma.ticket.findFirst({
       where: {
         deviceId: Number(deviceId),
         status: { in: ['open', 'in_progress'] },
       },
     });
-    if (existingOpenTicket) {
-      console.warn(`  ⚠️ Duplicate ticket: ticketId=${existingOpenTicket.id}, status=${existingOpenTicket.status}`);
+    if (existingDeviceTicket) {
+      console.warn(`  ⚠️ Duplicate ticket (device): ticketId=${existingDeviceTicket.id}, status=${existingDeviceTicket.status}`);
       res.status(409).json({
         error: 'เครื่องนี้มีการแจ้งซ่อมที่ยังไม่เสร็จอยู่แล้ว',
-        ticketId: existingOpenTicket.id,
-        status: existingOpenTicket.status,
+        ticketId: existingDeviceTicket.id,
+        status: existingDeviceTicket.status,
       });
       return;
+    }
+
+    // ── Anti-spam: ป้องกันแจ้งซ่อมซ้ำที่ระดับโต๊ะ (desk) ──────────
+    const deviceInfo = await prisma.device.findUnique({
+      where: { id: Number(deviceId) },
+      select: { deskId: true },
+    });
+    if (deviceInfo?.deskId) {
+      const otherDevicesOnDesk = await prisma.device.findMany({
+        where: { deskId: deviceInfo.deskId },
+        select: { id: true },
+      });
+      const otherDeviceIds = otherDevicesOnDesk.map(d => d.id).filter(id => id !== Number(deviceId));
+      
+      if (otherDeviceIds.length > 0) {
+        const existingDeskTicket = await prisma.ticket.findFirst({
+          where: {
+            deviceId: { in: otherDeviceIds },
+            status: { in: ['open', 'in_progress'] },
+          },
+        });
+        if (existingDeskTicket) {
+          console.warn(`  ⚠️ Duplicate ticket (desk): ticketId=${existingDeskTicket.id}, status=${existingDeskTicket.status}`);
+          res.status(409).json({
+            error: 'โต๊ะนี้มีการแจ้งซ่อมค้างอยู่แล้ว (อาจเป็นชิ้นส่วนอื่นบนโต๊ะเดียวกัน)',
+            ticketId: existingDeskTicket.id,
+            status: existingDeskTicket.status,
+          });
+          return;
+        }
+      }
     }
 
     // Create ticket

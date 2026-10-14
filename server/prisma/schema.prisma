@@ -48,16 +48,18 @@ model Desk {
 }
 
 model Device {
-  id      Int      @id @default(autoincrement())
-  name    String
-  posX    Float?
-  posY    Float?
-  status  String   @default("normal") // normal | broken | under_repair
-  roomId  Int
-  room    Room     @relation(fields: [roomId], references: [id])
-  deskId  Int?
-  desk    Desk?    @relation(fields: [deskId], references: [id])
-  tickets Ticket[]
+  id         Int      @id @default(autoincrement())
+  name       String
+  deviceType String   @default("case") // monitor | case | mouse | keyboard | aio (ดู DEVICE_TYPES ใน layoutRules)
+  posX       Float?
+  posY       Float?
+  status     String   @default("normal") // normal | broken | under_repair
+  roomId     Int
+  room       Room     @relation(fields: [roomId], references: [id])
+  deskId     Int?
+  desk       Desk?    @relation(fields: [deskId], references: [id])
+  tickets    Ticket[]
+  statusLogs DeviceStatusLog[]
 }
 
 model LayoutHistory {
@@ -97,10 +99,25 @@ model Student {
 }
 
 model User {
+  id              Int                 @id @default(autoincrement())
+  role            String              // 'student' | 'teacher'
+  name            String
+  studentId       String?
+  createdAt       DateTime            @default(now())
+  tickets         Ticket[]
+  statusLogs      DeviceStatusLog[]   @relation("UserStatusLogs")
+}
+
+model DeviceStatusLog {
   id          Int      @id @default(autoincrement())
-  role        String   // 'student' | 'teacher'
-  name        String
-  studentId   String?
+  deviceId    Int
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  fromStatus  String
+  toStatus    String
+  changedBy   Int
+  changedByUser User   @relation("UserStatusLogs", fields: [changedBy], references: [id], onDelete: Cascade)
+  source      String   @default("manual") // 'manual' | 'ticket' | 'preset_change'
   createdAt   DateTime @default(now())
-  tickets     Ticket[]
+
+  @@index([deviceId])
 }

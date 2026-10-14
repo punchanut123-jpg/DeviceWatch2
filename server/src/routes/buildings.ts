@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { rollupDeskStatus } from '../services/deskRollup';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -95,13 +96,21 @@ router.get('/rooms/:roomId', async (req, res) => {
             building: { select: { id: true, name: true } },
           },
         },
-        devices: {
+devices: {
           select: {
             id: true,
             name: true,
+            deviceType: true,
             posX: true,
             posY: true,
             status: true,
+            _count: {
+              select: {
+                tickets: {
+                  where: { status: { in: ['open', 'in_progress'] } },
+                },
+              },
+            },
           },
           orderBy: { name: 'asc' },
         },
@@ -112,7 +121,19 @@ router.get('/rooms/:roomId', async (req, res) => {
             x: true,
             y: true,
             devices: {
-              select: { id: true, name: true, status: true },
+              select: { 
+                id: true, 
+                name: true, 
+                status: true, 
+                deviceType: true,
+                _count: {
+                  select: {
+                    tickets: {
+                      where: { status: { in: ['open', 'in_progress'] } },
+                    },
+                  },
+                },
+              },
               orderBy: { name: 'asc' },
             },
           },
@@ -124,7 +145,13 @@ router.get('/rooms/:roomId', async (req, res) => {
       res.status(404).json({ error: 'ไม่พบห้องนี้' });
       return;
     }
-    res.json(room);
+    res.json({
+      ...room,
+      desks: room.desks.map((d) => ({
+        ...d,
+        status: rollupDeskStatus(d.devices),
+      })),
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาด' });

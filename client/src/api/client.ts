@@ -119,6 +119,19 @@ export const api = {
         method: 'PATCH',
         headers: authHeaders(token),
       }),
+    updateDeviceStatus: (token: string, deviceId: number, status: string, closeTicket?: boolean) =>
+      request<{ success: boolean; device: import('../types').Device; closedTickets: number }>(
+        `/admin/devices/${deviceId}/status`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ status, closeTicket }),
+          headers: authHeaders(token),
+        }
+      ),
+    getDeviceStatusLog: (token: string, deviceId: number) =>
+      request<import('../types').DeviceStatusLog[]>(`/admin/devices/${deviceId}/status-log`, {
+        headers: authHeaders(token),
+      }),
     updateRoomLayout: (token: string, roomId: number, payload: import('../types').LayoutSavePayload) =>
       request<import('../types').LayoutSaveResult>(`/admin/rooms/${roomId}/layout`, {
         method: 'PATCH',
@@ -136,5 +149,16 @@ export const api = {
         body: JSON.stringify({ sourceRoomId, confirm }),
         headers: authHeaders(token),
       }),
+    changeDeskPreset: (token: string, deskIds: number[], preset: 'standard' | 'aio', confirm?: boolean) =>
+      request<import('../types').PresetChangeResult>(`/admin/desks/preset`, {
+        method: 'POST',
+        body: JSON.stringify({ deskIds, preset, confirm }),
+        headers: authHeaders(token),
+      }),
+    clearPool: (token: string, roomId: number) =>
+      request<{ success: boolean; cleared: number; deletedNames?: string[]; message?: string }>(
+        `/admin/rooms/${roomId}/pool/clear`,
+        { method: 'POST', headers: authHeaders(token) }
+      ),
   },
 };

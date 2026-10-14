@@ -2,22 +2,219 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
+  Armchair,
   CheckCircle2,
   ChevronRight,
   ClipboardList,
   Home,
   Loader2,
+  Monitor,
+  MoreVertical,
   Wrench,
   X,
 } from 'lucide-react';
 import { api } from '../api/client';
-import type { RoomDetail, Device } from '../types';
+import type { RoomDetail, Device, Desk, DeviceStatus } from '../types';
 import { STATUS_TOKENS } from '../utils/roomGrouping';
+import { COMPONENT_ROLE, DEVICE_TYPE_LABELS, type DeviceType } from '../utils/layoutRules';
 import RoomLayout2D from '../components/RoomLayout2D';
 import { useAuth } from '../context/AuthContext';
 
 // Room poll interval
 const POLL_INTERVAL = 10_000;
+
+// ลำดับเลือก "ตัวแทนชิ้นหลัก" ของโต๊ะเมื่อแจ้งซ่อมระดับโต๊ะ
+const MAIN_PRIORITY: DeviceType[] = ['aio', 'case', 'monitor'];
+
+function pickDeskRepresentative(desk: Desk): Desk['devices'][number] | null {
+  const mains = desk.devices.filter(
+    (d) => COMPONENT_ROLE[d.deviceType] === 'main'
+  );
+  const pool = mains.length > 0 ? mains : desk.devices;
+  if (pool.length === 0) return null;
+  return [...pool].sort(
+    (a, b) =>
+      MAIN_PRIORITY.indexOf(a.deviceType) - MAIN_PRIORITY.indexOf(b.deviceType)
+  )[0];
+}
+
+// ── Desk Modal (คลิกตัวโต๊ะ: ดูชิ้นส่วน + แจ้งซ่อมระดับโต๊ะ) ──
+function DeskModal({
+  desk,
+  onClose,
+  onComponentClick,
+  onReportDesk,
+  onReportPart,
+  onChangeStatus,
+  isAdmin,
+}: {
+  desk: Desk;
+  onClose: () => void;
+  onComponentClick: (part: Desk['devices'][number]) => void;
+  onReportDesk: (desk: Desk) => void;
+  onReportPart: (part: Desk['devices'][number]) => void;
+  onChangeStatus: (part: Desk['devices'][number]) => void;
+  isAdmin: boolean;
+}) {
+  const status = desk.status;
+  const conf = status ? STATUS_TOKENS[status] : null;
+  const StatusIcon =
+    status === 'broken' ? AlertTriangle : status === 'under_repair' ? Wrench : CheckCircle2;
+
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-drag-handle" />
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">
+              <Armchair size={17} /> {desk.label}
+            </div>
+            <div className="desk-modal-sub">
+              ชิ้นส่วนบนโต๊ะ {desk.devices.length} ชิ้น · คลิกชิ้นส่วนเพื่อดู/แจ้งซ่อมรายชิ้น
+            </div>
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="ปิด">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="modal-body">
+          {conf && (
+            <div
+              className="desk-modal-status"
+              style={{ background: conf.badgeBg, color: conf.badgeText, borderColor: conf.border }}
+            >
+              <StatusIcon size={15} /> สถานะรวมของโต๊ะ: {conf.label}
+            </div>
+          )}
+
+          <div className="desk-part-list">
+            {desk.devices.map((part) => {
+              const partConf = STATUS_TOKENS[part.status] || STATUS_TOKENS.normal;
+              const PartIcon =
+                part.status === 'broken'
+                  ? AlertTriangle
+                  : part.status === 'under_repair'
+                  ? Wrench
+                  : CheckCircle2;
+              return (
+                <div key={part.id} className="desk-part-item-wrapper">
+                  <button
+                    className="desk-part-item"
+                    onClick={() => onComponentClick(part)}
+                  >
+                    <span className="desk-part-type">
+                      {DEVICE_TYPE_LABELS[part.deviceType] ?? part.deviceType}
+                    </span>
+                    <span className="desk-part-name">
+                      <Monitor size={14} /> {part.name}
+                    </span>
+                    <span
+                      className="desk-part-status"
+                      style={{ background: partConf.badgeBg, color: partConf.badgeText, borderColor: partConf.border }}
+                    >
+                      <PartIcon size={12} /> {partConf.label}
+                    </span>
+                  </button>
+                  {isAdmin && (
+                    <div className="desk-part-actions">
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={(e) => { e.stopPropagation(); onReportPart(part); }}
+                      >
+                        <Wrench size={14} /> แจ้งซ่อม
+                      </button>
+                      <StatusChangeDropdown
+                        part={part}
+                        onChange={onChangeStatus}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {desk.devices.length === 0 && (
+              <div className="rle-hint">โต๊ะนี้ยังไม่มีชิ้นส่วน</div>
+            )}
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>
+            ปิด
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={() => onReportDesk(desk)}
+            disabled={desk.devices.length === 0}
+          >
+            <Wrench size={15} /> แจ้งซ่อมทั้งโต๊ะ
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const STATUS_OPTIONS: { value: DeviceStatus; label: string }[] = [
+  { value: 'normal', label: 'ปกติ' },
+  { value: 'broken', label: 'ชำรุด' },
+  { value: 'under_repair', label: 'กำลังซ่อม' },
+];
+
+function StatusChangeDropdown({
+  part,
+  onChange,
+}: {
+  part: Desk['devices'][number];
+  onChange: (part: Desk['devices'][number]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [changing, setChanging] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleStatusChange = async (newStatus: DeviceStatus) => {
+    if (newStatus === part.status) return;
+    setChanging(true);
+    setError('');
+    try {
+      await onChange({ ...part, status: newStatus });
+      setOpen(false);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'เปลี่ยนสถานะไม่สำเร็จ');
+    } finally {
+      setChanging(false);
+    }
+  };
+
+  return (
+    <div className="status-dropdown">
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={() => setOpen(!open)}
+        disabled={changing}
+      >
+        <MoreVertical size={14} />
+      </button>
+      {open && (
+        <div className="status-dropdown-menu">
+          {STATUS_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              className={`status-dropdown-option ${part.status === opt.value ? 'active' : ''}`}
+              onClick={() => handleStatusChange(opt.value)}
+              disabled={changing || part.status === opt.value}
+            >
+              {opt.label}
+            </button>
+          ))}
+          {error && <div className="status-dropdown-error">{error}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Device Status Modal (replaces alert()) ───────────────────
 function DeviceStatusModal({
@@ -108,18 +305,23 @@ function DeviceStatusModal({
 function ReportModal({
   device,
   room,
+  deskLabel,
   onClose,
   onReported,
+  token,
+  student,
 }: {
   device: Device;
   room: RoomDetail;
+  deskLabel?: string;
   onClose: () => void;
   onReported: () => void;
+  token: string | null;
+  student: { id: number } | null;
 }) {
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { token, student } = useAuth();
 
   const submit = async () => {
     if (description.trim().length < 5) {
@@ -135,7 +337,10 @@ function ReportModal({
     setLoading(true);
     setError('');
     try {
-      await api.tickets.create(device.id, description.trim(), token, undefined, student.id);
+      const text = deskLabel
+        ? `[${deskLabel}] ${description.trim()}`
+        : description.trim();
+      await api.tickets.create(device.id, text, token, undefined, student.id);
       onReported();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
@@ -145,9 +350,11 @@ function ReportModal({
   };
 
   const locationLabel = `ห้อง ${room.name} · ชั้น ${room.floor.number} · ${room.floor.building.name}`;
-  const deskLabel =
-    room.desks.find((d) => d.devices.some((dev) => dev.id === device.id))?.label ?? null;
-  const coordLabel = deskLabel ? `โต๊ะ: ${deskLabel}` : 'ยังไม่มีโต๊ะ';
+  const coordLabel = deskLabel
+    ? `${deskLabel} · ชิ้นส่วน: ${device.name}`
+    : device.posX !== null && device.posY !== null
+    ? `พิกัด: ${device.posX}%, ${device.posY}%`
+    : 'ยังไม่มีโต๊ะ';
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -155,7 +362,9 @@ function ReportModal({
         <div className="modal-drag-handle" />
         <div className="modal-header">
           <div>
-            <div className="modal-title">แจ้งปัญหาเครื่อง {device.name}</div>
+            <div className="modal-title">
+              {deskLabel ? `แจ้งปัญหา ${deskLabel}` : `แจ้งปัญหาเครื่อง ${device.name}`}
+            </div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
               {locationLabel}
               {coordLabel && (
@@ -271,12 +480,15 @@ function SuccessModal({ onClose }: { onClose: () => void }) {
 export default function RoomView() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
+  const { token, role, student } = useAuth();
   const [room, setRoom] = useState<RoomDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reportingDevice, setReportingDevice] = useState<Device | null>(null);
   const [statusDevice, setStatusDevice] = useState<Device | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [deskModal, setDeskModal] = useState<Desk | null>(null);
+  const [reportDeskLabel, setReportDeskLabel] = useState<string | undefined>(undefined);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchRoom = useCallback(async () => {
@@ -308,15 +520,80 @@ export default function RoomView() {
     setReportingDevice(device);
   };
 
+  const handleDeskClick = (desk: Desk) => {
+    setDeskModal(desk);
+  };
+
+  const handlePartClick = (part: Desk['devices'][number]) => {
+    setDeskModal(null);
+    const dev = room?.devices.find((d) => d.id === part.id);
+    if (dev) handleDeviceClick(dev);
+  };
+
+  const hasOpenTicketsOnDesk = (desk: Desk): boolean => {
+    return desk.devices.some(d => (d as any)._count?.tickets > 0);
+  };
+
+  const handleReportDesk = (desk: Desk) => {
+    const rep = pickDeskRepresentative(desk);
+    if (!rep || !room) return;
+    const dev = room.devices.find((d) => d.id === rep.id);
+    if (!dev) return;
+    setDeskModal(null);
+    setReportDeskLabel(desk.label);
+    // Anti-spam: ถ้ามี ticket เปิดค้างที่โต๊ะนี้ ให้เตือน
+    if (hasOpenTicketsOnDesk(desk)) {
+      if (!window.confirm('โต๊ะนี้มีการแจ้งซ่อมค้างอยู่แล้ว (ระดับโต๊ะหรือรายชิ้น) ยังต้องการแจ้งเพิ่มไหม?')) {
+        return;
+      }
+    }
+    handleDeviceClick(dev);
+  };
+
+  const handleReportPart = (part: Desk['devices'][number]) => {
+    setDeskModal(null);
+    const dev = room?.devices.find((d) => d.id === part.id);
+    if (!dev) return;
+    setReportDeskLabel(part.name); // ชื่อชิ้นส่วนเป็น label
+    // Anti-spam: ถ้ามี ticket เปิดค้างที่โต๊ะนี้ (ระดับโต๊ะหรือรายชิ้น) ให้เตือน
+    const desk = room?.desks.find(d => d.devices.some(p => p.id === part.id));
+    if (desk && hasOpenTicketsOnDesk(desk)) {
+      if (!window.confirm('โต๊ะนี้มีการแจ้งซ่อมค้างอยู่แล้ว (ระดับโต๊ะหรือรายชิ้น) ยังต้องการแจ้งชิ้นนี้เพิ่มไหม?')) {
+        return;
+      }
+    }
+    handleDeviceClick(dev);
+  };
+
+  const handleChangeStatus = async (part: Desk['devices'][number]) => {
+    if (!token) return;
+    try {
+      await api.admin.updateDeviceStatus(token, part.id, part.status);
+      fetchRoom();
+    } catch (err: unknown) {
+      throw err;
+    }
+  };
+
   const handleReported = () => {
     setReportingDevice(null);
+    setReportDeskLabel(undefined);
     setShowSuccess(true);
     fetchRoom();
   };
 
-  const normalCount = room?.devices.filter((d) => d.status === 'normal').length ?? 0;
-  const brokenCount = room?.devices.filter((d) => d.status === 'broken').length ?? 0;
-  const repairCount = room?.devices.filter((d) => d.status === 'under_repair').length ?? 0;
+  // สถิติระดับ "โต๊ะ" (เฉพาะโต๊ะที่มีเครื่อง ≥ 1)
+  const desksWithDevices = room?.desks.filter((d) => d.devices.length > 0) ?? [];
+  const normalCount = desksWithDevices.filter(
+    (d) => d.status !== 'broken' && d.status !== 'under_repair'
+  ).length;
+  const brokenCount = desksWithDevices.filter((d) => d.status === 'broken').length;
+  const repairCount = desksWithDevices.filter((d) => d.status === 'under_repair').length;
+  const componentCount = room?.devices.length ?? 0;
+  // โต๊ะที่เปิด modal อยู่ — ใช้ข้อมูลล่าสุดจากการ poll
+  const openDesk = deskModal
+    ? room?.desks.find((d) => d.id === deskModal.id) ?? deskModal
+    : null;
 
   return (
     <div className="page">
@@ -367,32 +644,32 @@ export default function RoomView() {
                     <span>{room.floor.building.name}</span>
                   </div>
                   <div className="room-sidebar-item">
-                    <span>จำนวนเครื่อง:</span>
-                    <strong>{room.devices.length} เครื่อง</strong>
+                    <span>ชิ้นส่วน:</span>
+                    <strong>{componentCount} ชิ้น</strong>
                   </div>
                   <div className="room-sidebar-item">
                     <span>จำนวนโต๊ะ:</span>
-                    <strong>{room.desks.length} โต๊ะ</strong>
+                    <strong>{desksWithDevices.length} โต๊ะ</strong>
                   </div>
                 </div>
 
                 <div className="room-sidebar-card">
-                  <div className="room-sidebar-title">สรุปสถานะ</div>
+                  <div className="room-sidebar-title">สรุปสถานะ (นับเป็นโต๊ะ)</div>
                   <div className="room-sidebar-item">
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: STATUS_TOKENS.normal.text, fontWeight: 600 }}>
-                      <CheckCircle2 size={14} color={STATUS_TOKENS.normal.border} /> ปกติ
+                      <CheckCircle2 size={14} color={STATUS_TOKENS.normal.border} /> โต๊ะปกติ
                     </span>
                     <strong style={{ color: STATUS_TOKENS.normal.text }}>{normalCount}</strong>
                   </div>
                   <div className="room-sidebar-item">
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: STATUS_TOKENS.under_repair.text, fontWeight: 600 }}>
-                      <Wrench size={14} color={STATUS_TOKENS.under_repair.border} /> กำลังซ่อม
+                      <Wrench size={14} color={STATUS_TOKENS.under_repair.border} /> โต๊ะกำลังซ่อม
                     </span>
                     <strong style={{ color: STATUS_TOKENS.under_repair.text }}>{repairCount}</strong>
                   </div>
                   <div className="room-sidebar-item">
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: STATUS_TOKENS.broken.text, fontWeight: 600 }}>
-                      <AlertTriangle size={14} color={STATUS_TOKENS.broken.border} /> เสีย
+                      <AlertTriangle size={14} color={STATUS_TOKENS.broken.border} /> โต๊ะเสีย
                     </span>
                     <strong style={{ color: STATUS_TOKENS.broken.text }}>{brokenCount}</strong>
                   </div>
@@ -423,13 +700,13 @@ export default function RoomView() {
                 <div className="room-mobile-bar">
                   <div className="room-mobile-bar-stats">
                     <span className="room-mobile-stat room-mobile-stat-normal">
-                      <CheckCircle2 size={13} /> {normalCount} ปกติ
+                      <CheckCircle2 size={13} /> {normalCount} โต๊ะปกติ
                     </span>
                     <span className="room-mobile-stat room-mobile-stat-repair">
-                      <Wrench size={13} /> {repairCount} ซ่อม
+                      <Wrench size={13} /> {repairCount} โต๊ะซ่อม
                     </span>
                     <span className="room-mobile-stat room-mobile-stat-broken">
-                      <AlertTriangle size={13} /> {brokenCount} เสีย
+                      <AlertTriangle size={13} /> {brokenCount} โต๊ะเสีย
                     </span>
                   </div>
                   <div className="room-mobile-bar-links">
@@ -448,6 +725,7 @@ export default function RoomView() {
                   desks={room.desks}
                   roomName={room.name}
                   onDeviceClick={handleDeviceClick}
+                  onDeskClick={handleDeskClick}
                   selectedDeviceId={reportingDevice?.id}
                 />
 
@@ -477,11 +755,27 @@ export default function RoomView() {
         </div>
       </footer>
 
+      {/* ── Desk Modal (ดูชิ้นส่วนบนโต๊ะ) ── */}
+      {openDesk && (
+        <DeskModal
+          desk={openDesk}
+          onClose={() => setDeskModal(null)}
+          onComponentClick={handlePartClick}
+          onReportDesk={handleReportDesk}
+          onReportPart={handleReportPart}
+          onChangeStatus={handleChangeStatus}
+          isAdmin={role === 'admin'}
+        />
+      )}
+
       {/* ── Device Status Modal (non-normal click) ── */}
       {statusDevice && (
         <DeviceStatusModal
           device={statusDevice}
-          onClose={() => setStatusDevice(null)}
+          onClose={() => {
+            setStatusDevice(null);
+            setReportDeskLabel(undefined);
+          }}
           onReport={() => {
             setStatusDevice(null);
             setReportingDevice(statusDevice);
@@ -494,8 +788,14 @@ export default function RoomView() {
         <ReportModal
           device={reportingDevice}
           room={room}
-          onClose={() => setReportingDevice(null)}
+          deskLabel={reportDeskLabel}
+          onClose={() => {
+            setReportingDevice(null);
+            setReportDeskLabel(undefined);
+          }}
           onReported={handleReported}
+          token={token}
+          student={student}
         />
       )}
 

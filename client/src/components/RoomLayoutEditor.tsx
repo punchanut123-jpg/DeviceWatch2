@@ -6,8 +6,17 @@ import type {
   Device,
   LayoutSavePayload,
   LayoutSaveResult,
+  PresetChangePreview,
 } from '../types';
 import { gridPositions, nextDeskNumber } from '../utils/deskLayout';
+import {
+  DEVICE_TYPE_LABELS,
+  DUPLICATE_ALLOWED,
+  FORBIDDEN_COMBOS,
+  MAX_DEVICES_PER_DESK,
+  PRESET_LABELS,
+} from '../utils/layoutRules';
+import { api } from '../api/client';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -39,6 +48,7 @@ interface RoomLayoutEditorProps {
   initialDesks: Desk[];
   initialDevices: Device[];
   allRooms?: Array<{ id: number; name: string; floor: { number: number } }>;
+  token: string;
   onSelectRoom?: (roomId: number) => void;
   onSave: (payload: LayoutSavePayload) => Promise<LayoutSaveResult>;
   onApplyLayout: (sourceRoomId: number, confirm: boolean) => Promise<ApplyLayoutResult>;
@@ -96,6 +106,7 @@ export default function RoomLayoutEditor({
   initialDesks,
   initialDevices,
   allRooms,
+  token,
   onSelectRoom,
   onSave,
   onApplyLayout,
@@ -117,6 +128,13 @@ export default function RoomLayoutEditor({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [applyErr, setApplyErr] = useState('');
   const [applyBusy, setApplyBusy] = useState(false);
+
+  // Preset change modal state
+  const [showPresetModal, setShowPresetModal] = useState(false);
+  const [selectedDeskKeys, setSelectedDeskKeys] = useState<string[]>([]);
+  const [presetPreview, setPresetPreview] = useState<PresetChangePreview | null>(null);
+  const [presetLoading, setPresetLoading] = useState(false);
+  const [presetConfirming, setPresetConfirming] = useState(false);
 
   const dragRef = useRef<DragState | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -263,6 +281,47 @@ export default function RoomLayoutEditor({
     e.stopPropagation();
     setDeskTargetKey(null);
 
+    // ── กฎการจัดวาง: จำนวนชิ้นสูงสุดต่อโต๊ะ + ห้ามซ้ำชนิด (ดู layoutRules) ──
+    const target = desks.find((d) => d.key === key);
+    const moved = deviceById.get(drag.deviceId);
+    if (target && moved) {
+      const others = target.deviceIds.filter((id) => id !== drag.deviceId);
+      if (others.length >= MAX_DEVICES_PER_DESK) {
+        setMsg({
+          type: 'error',
+          text: `${target.label} มี ${others.length} ชิ้นแล้ว (สูงสุด ${MAX_DEVICES_PER_DESK} ชิ้น/โต๊ะ)`,
+        });
+        dragRef.current = null;
+        return;
+      }
+      if (moved.deviceType && !DUPLICATE_ALLOWED[moved.deviceType]) {
+        const typeLabel = DEVICE_TYPE_LABELS[moved.deviceType];
+        const hasDup = others.some(
+          (id) => deviceById.get(id)?.deviceType === moved.deviceType
+        );
+        if (hasDup) {
+          setMsg({ type: 'error', text: `บน${target.label} มี ${typeLabel} อยู่แล้ว` });
+          dragRef.current = null;
+          return;
+        }
+      }
+
+      // ── กฎ cross-type: case + aio ห้ามอยู่โต๊ะเดียวกัน ──
+      if (moved.deviceType) {
+        const allTypes = [...new Set([...others.map(id => deviceById.get(id)?.deviceType).filter(Boolean), moved.deviceType])];
+        for (const [typeA, typeB] of FORBIDDEN_COMBOS) {
+          if (allTypes.includes(typeA) && allTypes.includes(typeB)) {
+            setMsg({
+              type: 'error',
+              text: `${target.label} มี ${DEVICE_TYPE_LABELS[typeA]} และ ${DEVICE_TYPE_LABELS[typeB]} ร่วมกันไม่ได้`,
+            });
+            dragRef.current = null;
+            return;
+          }
+        }
+      }
+    }
+
     setDesks((prev) =>
       prev.map((d) => {
         const without = d.deviceIds.filter((id) => id !== drag.deviceId);
@@ -270,6 +329,7 @@ export default function RoomLayoutEditor({
         return d.deviceIds.includes(drag.deviceId) ? { ...d, deviceIds: without } : d;
       })
     );
+    setMsg(null);
     setSelectedKey(key);
     dragRef.current = null;
   };
@@ -389,6 +449,99 @@ export default function RoomLayoutEditor({
     }
   };
 
+  // ── Preset Change Handlers ─────────────────────────────────
+  const handlePresetPreview = async () => {
+    if (selectedDeskKeys.length === 0) {
+      setMsg({ type: 'error', text: 'กรุณาเลือกโต๊ะอย่างน้อย 1 ตัว' });
+      return;
+    }
+    const deskIds = selectedDeskKeys.map((k) => desks.find((d) => d.key === k)?.id).filter((id): id is number => id !== undefined);
+    if (deskIds.length !== selectedDeskKeys.length) return;
+
+    setPresetLoading(true);
+    try {
+      const res = await api.admin.changeDeskPreset(token, deskIds, 'standard');
+      if ('preview' in res && res.preview) {
+        setPresetPreview(res);
+        setShowPresetModal(true);
+      }
+    } catch (err: unknown) {
+      setMsg({ type: 'error', text: errText(err, 'โหลด preview ไม่สำเร็จ') });
+    } finally {
+      setPresetLoading(false);
+    }
+  };
+
+  const handlePresetConfirm = async (preset: 'standard' | 'aio') => {
+    if (selectedDeskKeys.length === 0) return;
+    const deskIds = selectedDeskKeys.map((k) => desks.find((d) => d.key === k)?.id).filter((id): id is number => id !== undefined);
+    if (deskIds.length !== selectedDeskKeys.length) return;
+
+    setPresetConfirming(true);
+    try {
+      const res = await api.admin.changeDeskPreset(token, deskIds, preset, true);
+      if ('success' in res && res.success) {
+        setShowPresetModal(false);
+        setSelectedDeskKeys([]);
+        setPresetPreview(null);
+        setMsg({ type: 'success', text: res.summary ?? 'เปลี่ยนชุดเรียบร้อย' });
+        onSave?.(buildPayload(desks, deletedIds, initialDevices));
+      }
+    } catch (err: unknown) {
+      setMsg({ type: 'error', text: errText(err, 'เปลี่ยนชุดไม่สำเร็จ') });
+    } finally {
+      setPresetConfirming(false);
+    }
+  };
+
+  const handleDeskSelect = (key: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedDeskKeys((prev) => [...prev, key]);
+    } else {
+      setSelectedDeskKeys((prev) => prev.filter((k) => k !== key));
+    }
+  };
+
+  const handleSelectAllDesks = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedDeskKeys(desks.map((d) => d.key));
+    } else {
+      setSelectedDeskKeys([]);
+    }
+  };
+
+  const handleUseForAllDesks = async (preset: 'standard' | 'aio') => {
+    if (!desks.length) return;
+    const allDeskIds = desks.map((d) => d.id).filter((id): id is number => id !== undefined);
+
+    setPresetLoading(true);
+    try {
+      const res = await api.admin.changeDeskPreset(token, allDeskIds, preset);
+      if ('preview' in res && res.preview) {
+        setPresetPreview(res);
+        setShowPresetModal(true);
+      }
+    } catch (err: unknown) {
+      setMsg({ type: 'error', text: errText(err, 'โหลด preview ไม่สำเร็จ') });
+    } finally {
+      setPresetLoading(false);
+    }
+  };
+
+  const handleClearPool = async () => {
+    if (!token || !roomId) return;
+    if (!window.confirm('ล้าง pool: จะลบชิ้นส่วนที่ไม่มีโต๊ะและไม่มี ticket ผูกออกจากระบบถาวร ต้องการดำเนินการต่อไหม?')) {
+      return;
+    }
+    try {
+      const res = await api.admin.clearPool(token, roomId);
+      setMsg({ type: 'success', text: res.message ?? `ล้าง pool แล้ว: ลบ ${res.cleared} ชิ้นส่วน` });
+      onSave?.(buildPayload(desks, deletedIds, initialDevices));
+    } catch (err: unknown) {
+      setMsg({ type: 'error', text: errText(err, 'ล้าง pool ไม่สำเร็จ') });
+    }
+  };
+
   const sourceOptions = (allRooms ?? []).filter((r) => r.id !== roomId);
 
   return (
@@ -436,6 +589,20 @@ export default function RoomLayoutEditor({
               {msg.text}
             </span>
           )}
+          {selectedDeskKeys.length > 0 && (
+            <span className="rle-msg rle-msg-ok" role="status" style={{ background: 'var(--primary-light)', borderColor: 'var(--primary)', color: 'var(--primary)' }}>
+              เลือกแล้ว {selectedDeskKeys.length} โต๊ะ
+            </span>
+          )}
+          <label className="rle-select-all" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={selectedDeskKeys.length === desks.length && desks.length > 0}
+              onChange={handleSelectAllDesks}
+              disabled={desks.length === 0}
+            />
+            เลือกทั้งหมด
+          </label>
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => setShowApply(true)}
@@ -443,8 +610,24 @@ export default function RoomLayoutEditor({
           >
             <Copy size={15} /> คัดลอกผัง
           </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handlePresetPreview}
+            disabled={selectedDeskKeys.length === 0 || presetLoading}
+            title="เปลี่ยนชุดโต๊ะที่เลือก"
+          >
+            <Wand2 size={15} /> เปลี่ยนชุด
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={handleReset} disabled={isSaving}>
             <RotateCcw size={15} /> รีเซ็ต
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleClearPool}
+            disabled={isSaving || pool.length === 0}
+            title="ลบชิ้นส่วนใน pool ที่ไม่มี ticket ผูก"
+          >
+            <Trash2 size={15} /> ล้าง pool
           </button>
           <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={isSaving}>
             <Save size={15} /> {isSaving ? 'กำลังบันทึก...' : 'บันทึกผังห้อง'}
@@ -507,7 +690,20 @@ export default function RoomLayoutEditor({
                   }}
                   title={desk.label}
                 >
-                  <div className="rle-desk-label">{desk.label}</div>
+                  <div className="rle-desk-label">
+                    <label className="rle-desk-select-label" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedDeskKeys.includes(desk.key)}
+                        onChange={(e) => handleDeskSelect(desk.key, e)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      {desk.label}
+                      <span className="rle-desk-count">
+                        {desk.deviceIds.length}/{MAX_DEVICES_PER_DESK}
+                      </span>
+                    </label>
+                  </div>
                   <div className="rle-desk-chips">
                     {desk.deviceIds.map((id) => {
                       const dev = deviceById.get(id);
@@ -520,7 +716,12 @@ export default function RoomLayoutEditor({
                           onDragStart={(e) => startDeviceDrag(e, id)}
                           onDragEnd={handleDragEnd}
                         >
-                          {dev.name}
+                          <span className="rle-chip-name">{dev.name}</span>
+                          {dev.deviceType && (
+                            <span className="rle-chip-type">
+                              {DEVICE_TYPE_LABELS[dev.deviceType]}
+                            </span>
+                          )}
                         </span>
                       );
                     })}
@@ -613,9 +814,13 @@ export default function RoomLayoutEditor({
                     draggable
                     onDragStart={(e) => startDeviceDrag(e, dev.id)}
                     onDragEnd={handleDragEnd}
+                    title={dev.deviceType ? DEVICE_TYPE_LABELS[dev.deviceType] : undefined}
                   >
                     <Monitor size={13} />
-                    <span>{dev.name}</span>
+                    <span className="rle-pool-name">{dev.name}</span>
+                    {dev.deviceType && (
+                      <span className="rle-pool-type">{DEVICE_TYPE_LABELS[dev.deviceType]}</span>
+                    )}
                   </div>
                 ))}
                 {pool.length === 0 && (
@@ -654,19 +859,22 @@ export default function RoomLayoutEditor({
                   {selected.deviceIds.map((id) => {
                     const dev = deviceById.get(id);
                     if (!dev) return null;
-                    return (
-                      <div key={id} className="rle-insp-device">
-                        <Monitor size={13} />
-                        <span>{dev.name}</span>
-                        <button
-                          className="rle-chip-remove"
-                          title="ดึงออกจากโต๊ะ"
-                          onClick={() => handleUnassignDevice(id)}
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
-                    );
+                      return (
+                        <div key={id} className="rle-insp-device">
+                          <Monitor size={13} />
+                          <span>{dev.name}</span>
+                          {dev.deviceType && (
+                            <em className="rle-chip-type">{DEVICE_TYPE_LABELS[dev.deviceType]}</em>
+                          )}
+                          <button
+                            className="rle-chip-remove"
+                            title="ดึงออกจากโต๊ะ"
+                            onClick={() => handleUnassignDevice(id)}
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      );
                   })}
                   {selected.deviceIds.length === 0 && (
                     <div className="rle-hint">ลากเครื่องจากแถบด้านบนมาวางบนโต๊ะ</div>
@@ -802,6 +1010,43 @@ export default function RoomLayoutEditor({
                   ? `ยืนยันคัดลอก (${preview.desksToCreate} โต๊ะ)`
                   : 'ยืนยันคัดลอก'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Preset Change Modal ── */}
+{showPresetModal && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget && !presetLoading && !presetConfirming) setShowPresetModal(false); }}>
+          <div className="modal" style={{ maxWidth: 560 }}>
+            <div className="modal-drag-handle" />
+            <div className="modal-header">
+              <div className="modal-title">{presetPreview ? `เปลี่ยนชุดเป็น ${PRESET_LABELS[presetPreview.preset]}` : 'เลือกชุดโต๊ะ'}</div>
+              <button className="modal-close" onClick={() => setShowPresetModal(false)} disabled={presetLoading || presetConfirming} aria-label="ปิด"><X size={18} /></button>
+            </div>
+            <div className="modal-body">
+              {presetLoading && <div className="loading-center"><div className="spinner" /><span>กำลังคำนวณตัวอย่าง...</span></div>}
+              {!presetLoading && presetPreview && (
+                <div>
+                  <div className="rle-hint" style={{ marginBottom: '0.75rem' }}>โต๊ะที่เลือก: <strong>{presetPreview.deskCount}</strong> โต๊ะ {presetPreview.totalAdded > 0 && <span style={{ marginLeft: '0.5rem', color: 'var(--success)' }}>+{presetPreview.totalAdded} ชิ้นส่วน</span>} {presetPreview.totalRemoved > 0 && <span style={{ marginLeft: '0.5rem', color: 'var(--danger)' }}>-{presetPreview.totalRemoved} ชิ้นส่วน</span>}</div>
+                  <div className="rle-preset-diff" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    {presetPreview.changes.length === 0 ? <div className="rle-hint">โต๊ะเหล่านี้อยู่ในชุดที่ต้องการแล้ว ไม่มีการเปลี่ยนแปลง</div> : (
+                      <table className="rle-preset-diff-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead><tr style={{ borderBottom: '2px solid var(--border)' }}><th style={{ textAlign: 'left', padding: '0.5rem' }}>โต๊ะ</th><th style={{ textAlign: 'left', padding: '0.5rem' }}>เพิ่ม</th><th style={{ textAlign: 'left', padding: '0.5rem' }}>ลบ</th></tr></thead>
+                        <tbody>{presetPreview.changes.map((c) => (<tr key={c.deskId} style={{ borderBottom: '1px solid var(--border)' }}><td style={{ padding: '0.5rem', fontWeight: 600 }}>{c.deskLabel}</td><td style={{ padding: '0.5rem', color: 'var(--success)' }}>{c.added.length > 0 ? c.added.join(', ') : '—'}</td><td style={{ padding: '0.5rem', color: 'var(--danger)' }}>{c.removed.length > 0 ? c.removed.join(', ') : '—'}</td></tr>))}</tbody>
+                      </table>
+                    )}
+                  </div>
+                  <div className="rle-hint" style={{ marginTop: '0.75rem' }}>สรุป: เพิ่ม <strong>{presetPreview.totalAdded}</strong> ชิ้น ส่วนลด <strong>{presetPreview.totalRemoved}</strong> ชิ้น</div>
+                </div>
+              )}
+              {!presetLoading && !presetPreview && <div className="rle-hint">ไม่สามารถคำนวณตัวอย่างได้</div>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowPresetModal(false)} disabled={presetLoading || presetConfirming}>ยกเลิก</button>
+              <button className="btn btn-primary" onClick={() => handlePresetConfirm('standard')} disabled={presetLoading || presetConfirming || !presetPreview}>{presetConfirming ? 'กำลังเปลี่ยน...' : 'ยืนยันเป็นชุดมาตรฐาน'}</button>
+              <button className="btn btn-primary" style={{ background: 'var(--primary)', borderColor: 'var(--primary)' }} onClick={() => handlePresetConfirm('aio')} disabled={presetLoading || presetConfirming || !presetPreview}>{presetConfirming ? 'กำลังเปลี่ยน...' : 'ยืนยันเป็นชุด AIO'}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => handleUseForAllDesks('standard')} disabled={presetLoading || presetConfirming || desks.length === 0}>ใช้กับทั้งห้อง: ชุดมาตรฐาน</button>
+              <button className="btn btn-ghost btn-sm" style={{ background: 'var(--primary)', borderColor: 'var(--primary)', color: 'var(--primary)' }} onClick={() => handleUseForAllDesks('aio')} disabled={presetLoading || presetConfirming || desks.length === 0}>ใช้กับทั้งห้อง: ชุด AIO</button>
             </div>
           </div>
         </div>

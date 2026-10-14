@@ -2239,6 +2239,10 @@ a { color: inherit; text-decoration: none; }
 }
 
 .rl2d-desk-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.66rem;
   font-weight: 700;
@@ -3775,6 +3779,10 @@ a { color: inherit; text-decoration: none; }
 }
 
 .rle-desk-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.66rem;
   font-weight: 700;
@@ -4080,4 +4088,215 @@ a { color: inherit; text-decoration: none; }
   .rle-msg {
     max-width: 100%;
   }
+}
+
+/* ══════════════════════════════════════════════
+   รอบ 2 — ชิ้นส่วนบนโต๊ะ + สถานะโต๊ะ (rollup)
+   ══════════════════════════════════════════════ */
+
+/* ── ตัวนับชิ้น/โต๊ะ ── */
+.rl2d-desk-count,
+.rle-desk-count {
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #64748B;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  padding: 0 4px;
+}
+
+/* ── วงรอบสถานะโต๊ะ (room view) ── */
+.rl2d-desk.rl2d-desk-st-normal {
+  border-color: #A8C87A;
+}
+.rl2d-desk.rl2d-desk-st-under_repair {
+  border-color: #D4A84B;
+  background: #FFFCF5;
+}
+.rl2d-desk.rl2d-desk-st-broken {
+  border-color: #A32D2D;
+  background: #FDF6F6;
+}
+.rl2d-desk.rl2d-desk-st-broken .rl2d-desk-label {
+  color: #A32D2D;
+}
+.rl2d-desk.rl2d-desk-st-under_repair .rl2d-desk-label {
+  color: #854F0B;
+}
+
+/* ── badge ชนิดชิ้นส่วน (จอ/เคส/เมาส์/คีย์บอร์ด/AIO) ── */
+.rl2d-chip-type {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.56rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748B;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 5px;
+  padding: 0 4px;
+}
+
+.rl2d-grid-type {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748B;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 5px;
+  padding: 0 5px;
+}
+
+.rle-chip-type {
+  flex-shrink: 0;
+  font-style: normal;
+  font-size: 0.56rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  border-radius: 5px;
+  padding: 0 4px;
+}
+
+.rle-pool-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rle-pool-type {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #854F0B;
+  background: #FFFFFF;
+  border: 1px solid #E7D9AE;
+  border-radius: 5px;
+  padding: 0 4px;
+}
+
+/* ── ปุ่ม label โต๊ะในแถบ strip (คลิกเปิด modal) ── */
+button.rl2d-strip-desk-label {
+  display: block;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+button.rl2d-strip-desk-label:hover {
+  color: #185FA5;
+  text-decoration: underline;
+}
+
+/* ── Desk modal (RoomView) ── */
+.desk-modal-sub {
+  font-size: 0.8rem;
+  color: #64748B;
+  margin-top: 0.2rem;
+}
+
+.desk-modal-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 0.9rem;
+}
+
+.desk-part-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.desk-part-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.desk-part-item:hover {
+  border-color: #185FA5;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+.desk-part-type {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #475569;
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  padding: 0.15rem 0.4rem;
+}
+
+.desk-part-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0F172A;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.desk-part-name svg {
+  flex-shrink: 0;
+  color: #64748B;
+}
+
+.desk-part-status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  white-space: nowrap;
+}
+
+/* ── รายการชิ้นส่วนเสียใน dashboard อาจารย์ ── */
+.td-broken-parts {
+  font-size: 0.72rem;
+  color: #64748B;
+  margin-top: 0.2rem;
 }

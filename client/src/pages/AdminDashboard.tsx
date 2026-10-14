@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, Clock3, Monitor, Ticket, User, Wrench, XCircle } from 'lucide-react';
+import { AlertCircle, Armchair, CheckCircle2, Clock3, Ticket, User, Wrench, XCircle, Monitor } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import type { AdminStats, Ticket as TicketType } from '../types';
@@ -85,12 +85,16 @@ export default function AdminDashboard() {
         <div className="loading-center"><div className="spinner" /><span>กำลังโหลด...</span></div>
       ) : stats ? (
         <>
-          <h2 className="section-title">สถานะอุปกรณ์</h2>
+          <h2 className="section-title">
+            สถานะโต๊ะ (นับเฉพาะโต๊ะที่มีเครื่อง) · ชิ้นส่วนทั้งหมด {stats.components.total}
+          </h2>
           <div className="stats-grid mb-2">
-            <StatCard icon={Monitor} label="ทั้งหมด" value={stats.devices.total} />
-            <StatCard icon={CheckCircle2} label="ปกติ" value={stats.devices.normal} tone="success" />
-            <StatCard icon={XCircle} label="เสีย" value={stats.devices.broken} tone="danger" />
-            <StatCard icon={Wrench} label="ซ่อมอยู่" value={stats.devices.underRepair} tone="warning" />
+            <StatCard icon={Armchair} label="โต๊ะทั้งหมด" value={stats.desks.total} />
+            <StatCard icon={CheckCircle2} label="ปกติ" value={stats.desks.normal} tone="success" />
+            <StatCard icon={XCircle} label="เสีย" value={stats.desks.broken} tone="danger" />
+            <StatCard icon={Wrench} label="ซ่อมอยู่" value={stats.desks.underRepair} tone="warning" />
+            <StatCard icon={Monitor} label="ชิ้นส่วนเสีย" value={stats.components.broken} tone="danger" />
+            <StatCard icon={Wrench} label="ชิ้นส่วนซ่อมอยู่" value={stats.components.underRepair} tone="warning" />
           </div>
 
           <h2 className="section-title mt-2">สถานะ Ticket</h2>

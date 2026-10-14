@@ -104,6 +104,7 @@ export default function AdminLayoutEditorPage() {
       initialDesks={roomDetail.desks}
       initialDevices={roomDetail.devices}
       allRooms={allRooms}
+      token={token ?? ''}
       onSelectRoom={(newRoomId) => navigate(`/admin/rooms/${newRoomId}/editor`)}
       onSave={handleSave}
       onApplyLayout={handleApplyLayout}

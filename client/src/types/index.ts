@@ -1,5 +1,7 @@
 // Shared TypeScript types for DeviceWatch
 
+import type { DeviceType } from '../utils/layoutRules';
+
 export type DeviceStatus = 'normal' | 'broken' | 'under_repair';
 export type TicketStatus = 'open' | 'in_progress' | 'resolved';
 
@@ -31,6 +33,7 @@ export interface Room {
 export interface Device {
   id: number;
   name: string;
+  deviceType?: DeviceType;
   posX: number | null;
   posY: number | null;
   status: DeviceStatus;
@@ -43,19 +46,22 @@ export interface Device {
   };
 }
 
-/** เครื่องที่อยู่ในโต๊ะ (ฝั่ง RoomDetail) */
+/** เครื่องที่อยู่ในโต๊ะ (ฝั่ง RoomDetail) — ปัจจุบันเป็นชิ้นส่วน (จอ/เคส/เมาส์/คีย์บอร์ด/AIO) */
 export interface DeskDevice {
   id: number;
   name: string;
   status: DeviceStatus;
+  deviceType: DeviceType;
 }
 
-/** โต๊ะในผังห้อง — x/y = null หมายถึงยังไม่ได้วาง (แสดงด้วยกริดคำนวณตอน render) */
+/** โต๊ะในผังห้อง — x/y = null หมายถึงยังไม่ได้วาง (แสดงด้วยกริดคำนวณตอน render)
+ *  status = rollup จากชิ้นหลัก (server คำนวณ, null = ไม่มีเครื่อง) */
 export interface Desk {
   id: number;
   label: string;
   x: number | null;
   y: number | null;
+  status: DeviceStatus | null;
   devices: DeskDevice[];
 }
 
@@ -98,12 +104,14 @@ export interface Ticket {
 }
 
 export interface AdminStats {
-  devices: {
+  /** สถิตินับ "โต๊ะ" (เฉพาะโต๊ะที่มีเครื่อง ≥ 1) — rollup จากชิ้นหลัก */
+  desks: {
     total: number;
     normal: number;
     broken: number;
     underRepair: number;
   };
+  components: { total: number; broken: number; underRepair: number };
   tickets: {
     total: number;
     open: number;
@@ -146,3 +154,47 @@ export interface ApplyLayoutResult {
   success?: boolean;
   summary?: string;
 }
+
+export interface DeviceStatusLog {
+  id: number;
+  deviceId: number;
+  fromStatus: string;
+  toStatus: string;
+  changedBy: number;
+  source: string;
+  createdAt: string;
+  changedByUser?: {
+    id: number;
+    name: string;
+    role: string;
+  };
+}
+
+export interface PresetChangeDeskChange {
+  deskId: number;
+  deskLabel: string;
+  added: string[];
+  removed: string[];
+  typeChanged: string[];
+}
+
+export interface PresetChangePreview {
+  preview: true;
+  preset: 'standard' | 'aio';
+  deskCount: number;
+  changes: PresetChangeDeskChange[];
+  totalAdded: number;
+  totalRemoved: number;
+  summary: string;
+}
+
+export interface PresetChangeConfirmed {
+  preview?: false;
+  success: true;
+  summary: string;
+  changes: PresetChangeDeskChange[];
+  totalAdded: number;
+  totalRemoved: number;
+}
+
+export type PresetChangeResult = PresetChangePreview | PresetChangeConfirmed;
